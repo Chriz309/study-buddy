@@ -3,9 +3,10 @@
    process (which owns the roaming brain); this file only animates + renders. */
 (function () {
   const $=(s)=>document.querySelector(s);
-  const glc=$('#gl'), faceSvg=$('#face'), fx=$('#fx'), speechEl=$('#speech'), chute=$('#chute');
+  const glc=$('#gl'), faceSvg=$('#face'), fx=$('#fx'), speechEl=$('#speech'), chute=$('#chute'), food=$('#food');
   if(window.PARACHUTE_ART) chute.src=window.PARACHUTE_ART;
-  let chuteOn=false;
+  if(window.FOOD_ART) food.src=window.FOOD_ART;
+  let chuteOn=false, foodT=0, foodOn=false;
   const IMG=window.BLOB_ART||'art/blob-body.png';
   let dpr=Math.max(1,window.devicePixelRatio||1);
   let jelly, face, settings=null, ready=false;
@@ -69,7 +70,7 @@
       case 'parachuteClose': chuteOn=false; chute.style.display='none'; break;
       case 'jump': jelly.stretch(.55); transient('surprised',500); break;
       case 'pet': jelly.squash(.45); transient('love',1100); face.talk(.6); hearts(); speak('pet'); break;
-      case 'fed': jelly.squash(.5); transient('love',1100); face.talk(.8); hearts(); speak('fed'); break;
+      case 'fed': foodOn=true; foodT=0; food.style.display='block'; food.style.opacity='1'; transient('surprised',750); break;
       case 'grab': jelly.stretch(.35); face.setExpr('happy'); break;
       case 'dizzy': transient('dizzy',1700); break;
       case 'look': face.glance(e.dir); break;
@@ -88,6 +89,12 @@
     if(speechEl.classList.contains('show')){ const b=jelly.getBounds(); speechEl.style.left=((b.minx+b.maxx)/2/dpr)+'px'; speechEl.style.top=(b.miny/dpr-8)+'px'; }
     if(chuteOn){ const cw=pet.size*1.35, chh=cw*1.081, sway=Math.sin(now/420)*7;
       chute.style.width=cw+'px'; chute.style.left=(pet.x+pet.size/2-cw/2+sway)+'px'; chute.style.top=(pet.y-chh+pet.size*0.18)+'px'; }
+    if(foodOn){ foodT+=dt; const dur=0.62, p=Math.min(1,foodT/dur), fw=pet.size*0.5;
+      const sy=pet.y-pet.size*1.05, ey=pet.y+pet.size*0.40; // drop from above into the mouth
+      food.style.width=fw+'px'; food.style.left=(pet.x+pet.size/2-fw/2)+'px'; food.style.top=(sy+(ey-sy)*(p*p))+'px';
+      food.style.opacity=String(p>0.82?Math.max(0,1-(p-0.82)/0.18):1);
+      if(p>=1){ foodOn=false; food.style.display='none'; food.style.opacity='1'; jelly.squash(.5); transient('love',900); face.talk(.7);
+        const c=petScreenCss(); spawn('✨','heart',c.x,c.y+pet.size*0.2); speak('fed'); } }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

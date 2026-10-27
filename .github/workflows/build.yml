@@ -21,12 +21,12 @@ jobs:
 
       - run: npm ci
 
-      # On a tag push, electron-builder publishes to the GitHub Release.
-      # On a manual run it just builds the artifacts.
-      - name: Build
+      # Publishes a GitHub Release (tagged v<version> from package.json) and
+      # uploads the installer. Runs on a tag push OR a manual "Run workflow".
+      - name: Build & publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win ${{ startsWith(github.ref, 'refs/tags/') && '--publish always' || '--publish never' }}
+        run: npx electron-builder --win --publish always
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

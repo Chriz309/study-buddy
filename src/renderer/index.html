@@ -17,56 +17,24 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 #flip { width: 100%; height: 100%; transform: scaleX(var(--dir)); transform-origin: 50% 100%; }
 #bob  { width: 100%; height: 100%; }
 #body { width: 100%; height: 100%; transform-origin: 50% 100%; animation: breathe 3.4s ease-in-out infinite; }
-.sprite { width: 100%; height: 100%; overflow: visible; display: block; filter: drop-shadow(0 7px 6px rgba(0,0,0,.28)); }
+.sprite { width: 100%; height: 100%; overflow: visible; display: block; filter: drop-shadow(0 6px 5px rgba(0,0,0,.22)); }
 @keyframes breathe { 0%,100% { transform: scaleY(1) scaleX(1); } 50% { transform: scaleY(1.03) scaleX(.985); } }
 
-/* ---- shared ink-outlined style (this is what kills the "paint" look) ---- */
-.sprite .body, .sprite .ear, .sprite .foot, .sprite .fin, .sprite .wing {
-  stroke: var(--ink, #2b2733); stroke-width: 3.2; stroke-linejoin: round; paint-order: stroke fill; }
-.sprite .body  { fill: var(--c1); }
-.sprite .body2 { fill: var(--c2); opacity: .45; }
-.sprite .shine { fill: #fff; opacity: .22; }
-.sprite .foot  { fill: var(--c2); transform-box: fill-box; transform-origin: center; }
-.sprite .ear   { fill: var(--c1); }
-.sprite .ear2  { fill: #ff9ebb; }
-.sprite .fin   { fill: var(--c2); }
-.sprite .wing  { fill: var(--c2); transform-box: fill-box; }
-.sprite .tail  { fill: var(--c1); stroke: var(--ink,#2b2733); stroke-width: 3.2; stroke-linejoin: round; paint-order: stroke fill; }
-.sprite .tailcat { fill: none; stroke: var(--c1); stroke-width: 7.5; stroke-linecap: round; }
-.sprite .halo  { fill: none; stroke: var(--accent); stroke-width: 3.5; opacity: .9; }
-.sprite .leg   { stroke: var(--ink,#2b2733); stroke-width: 2.6; stroke-linecap: round; }
-.sprite .nose  { fill: var(--accent); stroke: var(--ink,#2b2733); stroke-width: 1.4; stroke-linejoin: round; }
+/* colour/shading is baked into each SVG; CSS only drives motion + expression */
+.sprite .eye   { transform-box: fill-box; transform-origin: center; transition: transform .12s ease; }
+.sprite.blink .eye { transform: scaleY(.1); }
+.sprite .glint, .sprite .foot, .sprite .wing { transform-box: fill-box; transform-origin: center; }
+.sprite .cheek { transition: opacity .2s ease; }
+.sprite .mouth { transform-box: fill-box; transform-origin: center; }
 
-/* face */
-.sprite .eye   { fill: #1e2330; transform-box: fill-box; transform-origin: center; transition: transform .12s ease; }
-.sprite .eyeline { fill: none; stroke: #1e2330; stroke-width: 3; stroke-linecap: round; }
-.sprite.blink .eye { transform: scaleY(.12); }
-.sprite .glint { fill: #fff; transform-box: fill-box; transform-origin: center; }
-.sprite .mouth { fill: none; stroke: #1e2330; stroke-width: 2.6; stroke-linecap: round; transform-box: fill-box; transform-origin: center; }
-.sprite .mouthO{ fill: #1e2330; }
-.sprite .cheek { fill: #ff9ebb; opacity: .7; transition: opacity .2s ease; }
-.sprite .antenna   { stroke: var(--c2); stroke-width: 3; stroke-linecap: round; }
-.sprite .antennaTip{ fill: var(--accent); stroke: var(--ink,#2b2733); stroke-width: 1.2; }
-.sprite .whisker line { stroke: #1e2330; stroke-width: 1.3; stroke-linecap: round; opacity: .4; }
-
-/* ---- expression ---- */
+/* expression */
 .sprite.e-look .eye, .sprite.e-look .glint { transform: translateX(14%); }
 .sprite.e-smile .mouth { transform: translateY(1.5px) scaleX(1.2); }
-.sprite.e-smile .cheek { opacity: 1; }
 .sprite.e-surprise .eye { transform: scaleY(1.3) scaleX(1.12); }
 .sprite.e-talk .mouth { animation: talk .26s steps(2,end) infinite; }
 @keyframes talk { 0%,100% { transform: scaleY(1); } 50% { transform: translateY(2px) scaleY(.5) scaleX(.85); } }
 
-/* ---- character palettes ---- */
-.char-blob  { --c1:#5ad6ff; --c2:#2f96f5; --accent:#ffd23f; --ink:#243244; }
-.char-pib   { --c1:#ffb45e; --c2:#ef8a2e; --accent:#ffd23f; --ink:#5a3417; }
-.char-chirp { --c1:#ffd54a; --c2:#f2a93a; --accent:#ff8f3f; --ink:#5a4012; }
-.char-boo   { --c1:#ece9ff; --c2:#c3c8ff; --accent:#b39dff; --ink:#4a3f6b; }
-.char-boo .body { fill: rgba(236,233,255,.96); }
-.char-boo .sprite, .char-boo { }
-.char-finn  { --c1:#73d4ef; --c2:#3fa9d6; --accent:#7fe3ff; --ink:#1d4a63; }
-
-/* ---- poses ---- */
+/* ---------- poses ---------- */
 #pet.walking #bob { animation: bob .34s ease-in-out infinite; }
 #pet.walking .footL { animation: stepA .34s ease-in-out infinite; }
 #pet.walking .footR { animation: stepB .34s ease-in-out infinite; }
@@ -76,7 +44,6 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 
 #pet.sleeping #body { animation: snooze 3.6s ease-in-out infinite; }
 @keyframes snooze { 0%,100% { transform: scaleY(1) rotate(0); } 50% { transform: scaleY(1.05) rotate(-2deg); } }
-
 #pet.dragging #body { animation: none; transform: scaleY(1.06) scaleX(.95); }
 #pet.happy #body { animation: pop .42s ease; }
 @keyframes pop { 0% { transform: scale(1);} 35% { transform: scale(1.18,.86);} 70% { transform: scale(.94,1.08);} 100% { transform: scale(1);} }
@@ -84,8 +51,8 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 @keyframes squash { 0% { transform: scale(1.1,.86);} 100% { transform: scale(1);} }
 
 /* floaty ghost */
-.char-boo #body { animation: breathe 3.4s ease-in-out infinite, float 3s ease-in-out infinite; }
-@keyframes float { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-7%);} }
+.char-boo #body { animation: breathe 3.4s ease-in-out infinite, floaty 3s ease-in-out infinite; }
+@keyframes floaty { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-7%);} }
 
 /* flying bird: flapping wings */
 .char-chirp .wingF { transform-origin: 88% 55%; animation: flapF .3s ease-in-out infinite; }
@@ -93,7 +60,7 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 @keyframes flapF { 0%,100% { transform: rotate(0); } 50% { transform: rotate(26deg); } }
 @keyframes flapB { 0%,100% { transform: rotate(0); } 50% { transform: rotate(-26deg); } }
 
-/* swimming dolphin: gentle rock, tips up on the leap */
+/* swimming dolphin */
 #pet.swimming #body { animation: swimrock 1.3s ease-in-out infinite; }
 @keyframes swimrock { 0%,100% { transform: rotate(-4deg);} 50% { transform: rotate(4deg);} }
 
@@ -101,7 +68,7 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 .speech { position: absolute; left: 50%; bottom: 102%; transform: translateX(-50%) translateY(6px);
           background: #fff; color: #20263b; font-size: 13px; font-weight: 600; line-height: 1.25;
           padding: 8px 11px; border-radius: 13px; white-space: normal; width: max-content; max-width: 220px;
-          text-align: center; box-shadow: 0 6px 18px rgba(0,0,0,.22); border: 2px solid var(--accent);
+          text-align: center; box-shadow: 0 6px 18px rgba(0,0,0,.22); border: 2px solid #ffd23f;
           opacity: 0; transition: opacity .18s ease, transform .18s ease; pointer-events: none; z-index: 12; }
 .speech.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .speech::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 7px solid transparent; border-top-color: #fff; }
@@ -114,7 +81,7 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 .splash { position: absolute; font-size: 22px; pointer-events: none; animation: splashfx .7s ease-out forwards; }
 @keyframes splashfx { 0% { opacity: 1; transform: translateY(0) scale(.5);} 100% { opacity: 0; transform: translateY(-26px) scale(1.3);} }
 
-/* ---------- mini context menu (secondary; tray is primary) ---------- */
+/* ---------- mini context menu ---------- */
 .ctx { position: absolute; z-index: 30; background: rgba(28,28,38,.97); border: 1px solid rgba(255,255,255,.12);
        border-radius: 12px; padding: 6px; display: flex; flex-direction: column; gap: 2px; box-shadow: 0 10px 30px rgba(0,0,0,.4); min-width: 160px; }
 .ctx button { all: unset; color: #eef; font-size: 13px; font-weight: 600; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
@@ -123,9 +90,8 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 #backdrop { position: fixed; inset: 0; z-index: 20; display: none; }
 #backdrop.on { display: block; }
 
-/* reduced motion */
-body.rm #body, body.rm #bob, body.rm .foot, body.rm .tail, body.rm .wing { animation: none !important; }
-@media (prefers-reduced-motion: reduce) { #body, #bob, .foot, .tail, .wing { animation: none !important; } }
+body.rm #body, body.rm #bob, body.rm .foot, body.rm .wing { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { #body, #bob, .foot, .wing { animation: none !important; } }
   </style>
 </head>
 <body>
@@ -133,13 +99,9 @@ body.rm #body, body.rm #bob, body.rm .foot, body.rm .tail, body.rm .wing { anima
     <div id="fx"></div>
     <div id="pet" class="char-blob">
       <div id="speech" class="speech" hidden></div>
-      <div id="flip">
-        <div id="bob">
-          <div id="body">
-            <svg id="sprite" class="sprite" viewBox="0 0 100 100" aria-hidden="true"></svg>
-          </div>
-        </div>
-      </div>
+      <div id="flip"><div id="bob"><div id="body">
+        <svg id="sprite" class="sprite" viewBox="0 0 100 100" aria-hidden="true"></svg>
+      </div></div></div>
     </div>
     <div id="backdrop"></div>
     <div id="menu" class="ctx" hidden></div>

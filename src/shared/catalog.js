@@ -40,7 +40,7 @@ const DEFAULTS = {
   cosmetics: {},               // per-character unlocked cosmetics (future)
   codes: [],                   // redeemed easter-egg codes (future)
   settings: {
-    size: 120,
+    size: 85,                  // small by default
     speed: 1.0,
     personality: 'chill',
     mischief: 25,

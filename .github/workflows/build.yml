@@ -1,10 +1,12 @@
 name: Build & Release
 
-# Tag a version to cut a release:  git tag v0.1.0 && git push --tags
+# Builds + publishes a GitHub Release on every meaningful push to main (so the
+# installed app auto-updates), and on a manual "Run workflow".
 on:
   push:
-    tags: ['v*']
-  workflow_dispatch: {}   # also allow manual runs (build only, no release)
+    branches: [main]
+    paths: ['src/**', 'assets/**', 'package.json', 'electron-builder.yml']
+  workflow_dispatch: {}
 
 jobs:
   windows:

@@ -12,7 +12,7 @@ const Engine = {
   state:'idle', stateUntil:0, nextDecision:0, lastChange:0, target:null,
   onFloor:false, dragging:false, parachute:false, recent:[], cursor:{x:0,y:0},
   settings:{speed:1,personality:'chill',mischief:25},
-  world:{x0:0,y0:0,x1:1280,y1:720,floors:[]}, lastTick:0, _wantClimb:false, _peeking:false,
+  world:{x0:0,y0:0,x1:1280,y1:720,floors:[]}, ledge:null, lastTick:0, _wantClimb:false, _peeking:false,
 
   init(hooks, now){ this.hooks=hooks||{}; this.lastTick=now; this.lastChange=now; },
 
@@ -29,9 +29,13 @@ const Engine = {
   setSize(px){ this.size=px; },
   setSettings(s){ Object.assign(this.settings,s); },
   setCursor(p){ this.cursor=p; },
+  setLedge(seg){ this.ledge=seg||null; },
   floorAt(x){ const cx=x+this.size/2; let best=null;
     for(const f of this.world.floors) if(cx>=f.x0&&cx<=f.x1) best=best==null?f.y:Math.max(best,f.y);
-    if(best==null) best=this.world.y1; return best-this.size; },
+    if(best==null) best=this.world.y1; let fy=best-this.size;
+    // the active window's top edge is a ledge: land/perch on it only when at or above it
+    const L=this.ledge; if(L&&cx>=L.x0&&cx<=L.x1){ const ly=L.y-this.size; if(ly<fy && this.pos.y<=ly+6) fy=ly; }
+    return fy; },
 
   grab(){ this.dragging=true; this.setState('drag',1e9); this.hooks.event&&this.hooks.event('grab'); },
   dragTo(x,y){ const nx=clamp(x-this.size/2,this.world.x0-this.size*0.3,this.world.x1-this.size*0.7);

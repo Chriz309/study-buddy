@@ -1,6 +1,7 @@
 'use strict';
 const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, shell } = require('electron');
 const path = require('path');
+const { execFile } = require('child_process');
 const store = require('./store');
 const engine = require('./engine');
 const { CHARACTERS, CURRENCY, RARITIES, PERSONALITIES, characterById } = require('../shared/catalog');
@@ -104,6 +105,36 @@ function syncEngineSettings() {
   const s = store.get().settings;
   engine.setSettings({ speed: s.speed, personality: s.personality, mischief: s.mischief });
   engine.setSize(s.size || 140);
+}
+
+// --- window awareness: perch on the active window's top edge -------------
+// Reads the foreground window rect on Windows and feeds the engine a "ledge".
+// Fails safe: any error/uncertainty -> no ledge -> normal desktop behaviour.
+const PS_FG = 'Add-Type -Namespace Win -Name U -MemberDefinition \'[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r); public struct RECT { public int left, top, right, bottom; }\' ; $h=[Win.U]::GetForegroundWindow(); $r=New-Object Win.U+RECT; [void][Win.U]::GetWindowRect($h,[ref]$r); Write-Output ("{0},{1},{2},{3}" -f $r.left,$r.top,$r.right,$r.bottom)';
+let fgBusy = false;
+function pollForeground() {
+  try {
+    if (process.platform !== 'win32') { engine.setLedge(null); return; }
+    if (fgBusy) return;
+    if (!store.get().settings.windowAware) { engine.setLedge(null); return; }
+    fgBusy = true;
+    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', PS_FG], { timeout: 2500, windowsHide: true }, (err, stdout) => {
+      fgBusy = false;
+      try {
+        if (err || !stdout) return engine.setLedge(null);
+        const m = stdout.trim().split(',').map(Number);
+        if (m.length !== 4 || m.some(n => !isFinite(n))) return engine.setLedge(null);
+        const [l, t, r, b] = m; if (r <= l || b <= t) return engine.setLedge(null);
+        const tl = screen.screenToDipPoint({ x: l, y: t }), br = screen.screenToDipPoint({ x: r, y: b });
+        const x0 = tl.x, y0 = tl.y, x1 = br.x, y1 = br.y, w = x1 - x0, h = y1 - y0;
+        const d = screen.getDisplayNearestPoint({ x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2) });
+        const wa = d.workArea;
+        const coversDisplay = (x0 <= wa.x + 4 && x1 >= wa.x + wa.width - 4 && y0 <= wa.y + 4);
+        const normal = w > 220 && h > 120 && y0 > wa.y + 48 && y0 < wa.y + wa.height - 80 && !coversDisplay;
+        engine.setLedge(normal ? { x0: x0 + 8, x1: x1 - 8, y: y0 } : null);
+      } catch { engine.setLedge(null); }
+    });
+  } catch { fgBusy = false; engine.setLedge(null); }
 }
 
 // --- settings / shop window ---------------------------------------------
@@ -240,6 +271,7 @@ app.on('ready', () => {
   screen.on('display-added', relayout);
   screen.on('display-removed', relayout);
   screen.on('display-metrics-changed', relayout);
+  setInterval(pollForeground, 800);   // window-awareness poll (Windows)
 });
 app.on('window-all-closed', () => { /* keep running in tray */ });
 app.on('before-quit', () => { app.isQuiting = true; store.save(); });

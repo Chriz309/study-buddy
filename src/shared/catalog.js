@@ -51,6 +51,7 @@ const DEFAULTS = {
     paused: false,
     reduceMotion: false,
     roamMonitors: true,        // cross to other monitors
+    windowAware: true,         // perch on the active window's top edge (Windows)
     showAll: false,            // show every owned pet at once (future multi-pet)
   },
 };

@@ -1,107 +1,79 @@
-/* Animated vector face that rides on top of the jelly body.
-   Eyes blink, glance around and change shape; the mouth morphs between
-   expressions and can "talk". The whole face is transformed each frame to
-   follow the body's squash/stretch so it feels like one creature. */
+/* Animated parts overlay that rides on top of the jelly body: eyes, mouth and
+   two little feet. The whole 100x100 layer is mapped onto the body's current
+   (squashing) bounds so everything deforms with it. Feet step while walking;
+   the face hides when the blob turns its back (climbing). */
 (function (global) {
-  const SVGNS = 'http://www.w3.org/2000/svg';
-  const el = (n, a) => { const e = document.createElementNS(SVGNS, n); for (const k in (a||{})) e.setAttribute(k, a[k]); return e; };
-
-  // face-local layout (100x100), eyes a touch above centre
-  const EYE = { lx: 39, rx: 61, y: 49, rxw: 7.2, ryh: 9.2 };
-  const MOUTHS = {
-    smile:    'M43 62 Q50 69 57 62',
-    grin:     'M42 61 Q50 72 58 61 Q50 66 42 61 Z',
-    o:        '', // drawn as ellipse instead
-    small:    'M46 64 Q50 67 54 64',
-    flat:     'M45 64 L55 64',
-    sleepy:   'M46 65 Q50 68 54 65',
-  };
+  const SVGNS='http://www.w3.org/2000/svg';
+  const el=(n,a)=>{const e=document.createElementNS(SVGNS,n);for(const k in(a||{}))e.setAttribute(k,a[k]);return e;};
+  const EYE={lx:40,rx:60,y:45,rxw:7.4,ryh:9.4};
+  const FOOT={ly:92, ry:92, lx:39, rx:61, rxw:7, ryh:4.6, base:92};
+  const M={ smile:'M43 57 Q50 64 57 57', grin:'M42 56 Q50 67 58 56 Q50 61 42 56 Z',
+    small:'M46 59 Q50 62 54 59', sleepy:'M46 60 Q50 63 54 60' };
 
   class Face {
-    constructor(svg) {
-      this.svg = svg; svg.setAttribute('viewBox', '0 0 100 100');
-      this.look = { x: 0, y: 0 }; this.lookTarget = { x: 0, y: 0 };
-      this.blinkT = 0; this.nextBlink = 1 + Math.random()*3;
-      this.expr = 'neutral'; this.t = 0; this.talkUntil = 0;
-      this._build();
+    constructor(svg){ this.svg=svg; svg.setAttribute('viewBox','0 0 100 100');
+      this.look={x:0,y:0}; this.lookTarget={x:0,y:0}; this.blinkT=0; this.nextBlink=1+Math.random()*3;
+      this.expr='neutral'; this.t=0; this.talkUntil=0; this.walking=false; this.back=false; this.phase=0;
+      this.restWdev=200; this.restHdev=220; this.cssScale=1; this._build(); }
+    _build(){
+      // feet first (behind body visually is impossible on overlay, so draw subtle)
+      this.feet=el('g');
+      this.footL=el('ellipse',{cx:FOOT.lx,cy:FOOT.base,rx:FOOT.rxw,ry:FOOT.ryh,fill:'#49a9e8',stroke:'#1d3b5e','stroke-width':2.4});
+      this.footR=el('ellipse',{cx:FOOT.rx,cy:FOOT.base,rx:FOOT.rxw,ry:FOOT.ryh,fill:'#49a9e8',stroke:'#1d3b5e','stroke-width':2.4});
+      this.feet.appendChild(this.footL); this.feet.appendChild(this.footR);
+      const mk=(cx)=>{ const g=el('g');
+        const ball=el('ellipse',{cx,cy:EYE.y,rx:EYE.rxw,ry:EYE.ryh,fill:'#1b2338'});
+        const hi=el('circle',{cx:cx-2.4,cy:EYE.y-3.3,r:2.7,fill:'#fff'});
+        const hi2=el('circle',{cx:cx+2.2,cy:EYE.y+2.8,r:1.3,fill:'#fff','fill-opacity':.7});
+        const arc=el('path',{d:`M${cx-6} ${EYE.y+1} Q${cx} ${EYE.y-6} ${cx+6} ${EYE.y+1}`,fill:'none',stroke:'#1b2338','stroke-width':3.3,'stroke-linecap':'round',visibility:'hidden'});
+        g.appendChild(ball);g.appendChild(hi);g.appendChild(hi2);g.appendChild(arc); g.ball=ball;g.hi=hi;g.hi2=hi2;g.arc=arc;g.cx=cx; return g; };
+      this.eL=mk(EYE.lx); this.eR=mk(EYE.rx);
+      this.faceG=el('g'); this.pupils=el('g'); this.pupils.appendChild(this.eL); this.pupils.appendChild(this.eR);
+      this.mouth=el('path',{d:M.smile,fill:'none',stroke:'#1b2338','stroke-width':2.9,'stroke-linecap':'round','stroke-linejoin':'round'});
+      this.mouthO=el('ellipse',{cx:50,cy:58,rx:3.6,ry:4.4,fill:'#1b2338',visibility:'hidden'});
+      this.faceG.appendChild(this.pupils); this.faceG.appendChild(this.mouth); this.faceG.appendChild(this.mouthO);
+      this.svg.appendChild(this.feet); this.svg.appendChild(this.faceG);
     }
-    _build() {
-      const mk = (cx) => {
-        const g = el('g');
-        const ball = el('ellipse', { cx, cy: EYE.y, rx: EYE.rxw, ry: EYE.ryh, fill: '#1b2338' });
-        const hi  = el('circle', { cx: cx-2.4, cy: EYE.y-3.2, r: 2.6, fill: '#fff' });
-        const hi2 = el('circle', { cx: cx+2.2, cy: EYE.y+2.6, r: 1.25, fill: '#fff', 'fill-opacity': .7 });
-        const arc = el('path', { d: `M${cx-6} ${EYE.y+1} Q${cx} ${EYE.y-6} ${cx+6} ${EYE.y+1}`,
-          fill: 'none', stroke: '#1b2338', 'stroke-width': 3.2, 'stroke-linecap': 'round', visibility: 'hidden' });
-        g.appendChild(ball); g.appendChild(hi); g.appendChild(hi2); g.appendChild(arc);
-        g.ball = ball; g.hi = hi; g.hi2 = hi2; g.arc = arc; g.cx = cx;
-        return g;
-      };
-      this.eL = mk(EYE.lx); this.eR = mk(EYE.rx);
-      this.pupils = el('g'); this.pupils.appendChild(this.eL); this.pupils.appendChild(this.eR);
-      this.mouth = el('path', { d: MOUTHS.smile, fill: 'none', stroke: '#1b2338', 'stroke-width': 2.8, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
-      this.mouthO = el('ellipse', { cx: 50, cy: 65, rx: 3.6, ry: 4.4, fill: '#1b2338', visibility: 'hidden' });
-      this.svg.appendChild(this.pupils); this.svg.appendChild(this.mouth); this.svg.appendChild(this.mouthO);
+    setRest(wDev,hDev,cssScale){ this.restWdev=wDev; this.restHdev=hDev; this.cssScale=cssScale;
+      this.svg.style.width=(wDev*cssScale)+'px'; this.svg.style.height=(hDev*cssScale)+'px'; this.svg.style.transformOrigin='0 0'; }
+    setExpr(name){ this.expr=name; const happy=name==='happy',surprised=name==='surprised',sleepy=name==='sleepy';
+      for(const g of[this.eL,this.eR]){ const arc=happy;
+        g.ball.setAttribute('visibility',arc?'hidden':'visible'); g.hi.setAttribute('visibility',arc?'hidden':'visible');
+        g.hi2.setAttribute('visibility',arc?'hidden':'visible'); g.arc.setAttribute('visibility',arc?'visible':'hidden'); }
+      this._eyeScaleBase=surprised?1.22:sleepy?0.42:1;
+      this.mouthO.setAttribute('visibility',surprised?'visible':'hidden');
+      if(!surprised) this.mouth.setAttribute('d',happy?M.grin:sleepy?M.sleepy:M.smile);
+      this.mouth.setAttribute('fill',happy?'#1b2338':'none'); this.mouth.setAttribute('visibility',surprised?'hidden':'visible'); }
+    blink(){ this.blinkT=0.16; }
+    glance(){ const a=[-1,0,1][Math.floor(Math.random()*3)],b=[-.6,0,.4][Math.floor(Math.random()*3)];
+      this.lookTarget={x:a*2.7,y:b*2.0}; this._glanceBack=this.t+0.6+Math.random()*1.2; }
+    lookAt(dx){ this.lookTarget={x:Math.max(-3,Math.min(3,dx)),y:this.lookTarget.y}; this._glanceBack=this.t+1.2; }
+    talk(sec){ this.talkUntil=this.t+(sec||1.2); }
+    setWalking(on){ this.walking=on; }
+    setBack(on){ if(this.back===on)return; this.back=on; this.faceG.style.display=on?'none':''; }
+    idle(dt){ this.nextBlink-=dt;
+      if(this.nextBlink<=0){ this.blink(); if(Math.random()<.25) setTimeout(()=>this.blink(),160); this.nextBlink=1.6+Math.random()*3.6; }
+      if(this._glanceBack&&this.t>this._glanceBack){ this.lookTarget={x:0,y:0}; this._glanceBack=0; }
+      if(!this._glanceBack&&Math.random()<dt*0.22) this.glance(); }
+    step(dt){ this.t+=dt;
+      this.look.x+=(this.lookTarget.x-this.look.x)*Math.min(1,dt*8); this.look.y+=(this.lookTarget.y-this.look.y)*Math.min(1,dt*8);
+      this.pupils.setAttribute('transform',`translate(${this.look.x} ${this.look.y})`);
+      let sy=this._eyeScaleBase||1;
+      if(this.blinkT>0){ this.blinkT-=dt; const p=Math.max(0,this.blinkT/0.16); sy*=(0.08+0.92*(1-Math.sin(p*Math.PI))); }
+      for(const g of[this.eL,this.eR]) g.setAttribute('transform',`translate(${g.cx} ${EYE.y}) scale(1 ${sy}) translate(${-g.cx} ${-EYE.y})`);
+      if(this.t<this.talkUntil&&this.expr!=='surprised'){ const o=1+Math.sin(this.t*26)*0.5;
+        this.mouth.setAttribute('d',o>1.2?M.grin:M.small); this.mouth.setAttribute('fill',o>1.2?'#1b2338':'none'); }
+      // feet: step while walking, otherwise planted
+      if(this.walking||this.back){ this.phase+=dt*11;
+        const lift=3.2; const l=Math.max(0,Math.sin(this.phase))*lift, r=Math.max(0,Math.sin(this.phase+Math.PI))*lift;
+        this.footL.setAttribute('cy',FOOT.base-l); this.footR.setAttribute('cy',FOOT.base-r);
+        this.footL.setAttribute('cx',FOOT.lx+Math.cos(this.phase)*1.3); this.footR.setAttribute('cx',FOOT.rx+Math.cos(this.phase+Math.PI)*1.3);
+      } else { this.footL.setAttribute('cy',FOOT.base); this.footR.setAttribute('cy',FOOT.base);
+        this.footL.setAttribute('cx',FOOT.lx); this.footR.setAttribute('cx',FOOT.rx); }
     }
-    setExpr(name) {
-      this.expr = name;
-      const happy = name === 'happy', surprised = name === 'surprised', sleepy = name === 'sleepy';
-      for (const g of [this.eL, this.eR]) {
-        const arcEyes = happy;
-        g.ball.setAttribute('visibility', arcEyes ? 'hidden' : 'visible');
-        g.hi.setAttribute('visibility', arcEyes ? 'hidden' : 'visible');
-        g.hi2.setAttribute('visibility', arcEyes ? 'hidden' : 'visible');
-        g.arc.setAttribute('visibility', arcEyes ? 'visible' : 'hidden');
-      }
-      this._eyeScaleBase = surprised ? 1.22 : sleepy ? 0.42 : 1;
-      this.mouthO.setAttribute('visibility', surprised ? 'visible' : 'hidden');
-      if (!surprised) this.mouth.setAttribute('d', happy ? MOUTHS.grin : sleepy ? MOUTHS.sleepy : MOUTHS.smile);
-      this.mouth.setAttribute('fill', happy ? '#1b2338' : 'none');
-      this.mouth.setAttribute('visibility', surprised ? 'hidden' : 'visible');
-    }
-    blink() { this.blinkT = 0.16; }
-    glance() { const a = [-1,0,1][Math.floor(Math.random()*3)], b = [-.6,0,.4][Math.floor(Math.random()*3)];
-      this.lookTarget = { x: a*2.6, y: b*2.0 }; this._glanceBack = this.t + 0.6 + Math.random()*1.2; }
-    talk(sec) { this.talkUntil = this.t + (sec||1.2); }
-
-    // idle brain: autonomous blinks / glances when nothing else is driving
-    idle(dt) {
-      this.nextBlink -= dt;
-      if (this.nextBlink <= 0) { this.blink(); if (Math.random()<.25) setTimeout(()=>this.blink(),160); this.nextBlink = 1.6 + Math.random()*3.6; }
-      if (this._glanceBack && this.t > this._glanceBack) { this.lookTarget = {x:0,y:0}; this._glanceBack = 0; }
-      if (!this._glanceBack && Math.random() < dt*0.25) this.glance();
-    }
-
-    step(dt) {
-      this.t += dt;
-      // ease look
-      this.look.x += (this.lookTarget.x - this.look.x) * Math.min(1, dt*8);
-      this.look.y += (this.lookTarget.y - this.look.y) * Math.min(1, dt*8);
-      this.pupils.setAttribute('transform', `translate(${this.look.x} ${this.look.y})`);
-      // blink
-      let sy = this._eyeScaleBase || 1;
-      if (this.blinkT > 0) { this.blinkT -= dt; const p = Math.max(0, this.blinkT/0.16); sy *= (0.08 + 0.92*(1-Math.sin(p*Math.PI))); }
-      for (const g of [this.eL, this.eR]) g.setAttribute('transform', `translate(${g.cx} ${EYE.y}) scale(1 ${sy}) translate(${-g.cx} ${-EYE.y})`);
-      // talk: wobble the mouth open/closed
-      if (this.t < this.talkUntil && this.expr !== 'surprised') {
-        const open = 1 + Math.sin(this.t*26)*0.5;
-        this.mouth.setAttribute('d', open>1.2 ? MOUTHS.grin : MOUTHS.small);
-        this.mouth.setAttribute('fill', open>1.2 ? '#1b2338' : 'none');
-      }
-    }
-    // track the body's current bounding box (squash/stretch + position).
-    // rest = { w, h, faceW, faceH, cssScale } ; coords are in canvas device px,
-    // cssScale converts device px -> css px for the overlay transform.
-    follow(b, rest) {
-      const s = rest.cssScale || 1;
-      const fx = ((b.minx+b.maxx)/2) * s;
-      const fy = (b.miny + (b.maxy-b.miny)*0.52) * s;
-      const sx = (b.maxx-b.minx)/rest.w, sy = (b.maxy-b.miny)/rest.h;
-      const left = fx - 0.5*rest.faceW*sx;
-      const top  = fy - 0.49*rest.faceH*sy;
-      this.svg.style.transformOrigin = '0 0';
-      this.svg.style.transform = `translate(${left}px, ${top}px) scale(${sx}, ${sy})`;
-    }
+    follow(b){ const s=this.cssScale; const left=b.minx*s, top=b.miny*s;
+      const sx=(b.maxx-b.minx)/this.restWdev, sy=(b.maxy-b.miny)/this.restHdev;
+      this.svg.style.transform=`translate(${left}px,${top}px) scale(${sx},${sy})`; }
   }
-  global.Face = Face;
+  global.Face=Face;
 })(window);

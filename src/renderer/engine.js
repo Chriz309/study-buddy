@@ -72,13 +72,13 @@
 
     loop(now){ const dt=Math.min(0.05,(now-this.last)/1000); this.last=now;
       if(!this.dragging) this.step(dt,now);
-      if(!this.dragging&&this.state!=='sleep'&&this.state!=='drag'&&now-this.lastChange>7000){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
+      if(!this.dragging&&this.state!=='sleep'&&this.state!=='drag'&&this.state!=='climb'&&now-this.lastChange>7000){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
       this.hooks.onFrame&&this.hooks.onFrame(dt,now);
       this.raf=requestAnimationFrame(this.loop); },
     step(dt,now){ const spd=this.baseSpeed*(this.settings.speed||1)*(this.settings.personality==='hyper'?1.5:this.settings.personality==='sleepy'?.6:1);
       const x0=this.world.x0,x1=this.world.x1;
       const climbing=this._wantClimb&&Math.abs(this.pos.x-(this.climbEdge??-1e9))<2;
-      if(climbing){ this.pos.y-=spd*1.1*dt; this.facing=this.climbEdge===x0?1:-1;
+      if(climbing){ if(this.state!=='climb') this.setState('climb',1e9); this.pos.y-=spd*1.3*dt; this.facing=this.climbEdge===x0?1:-1;
         if(this.pos.y<this.world.y0+rnd(10,60)){ this._wantClimb=false; this.onFloor=false; this.vel.y=0; this.setState('fall',1e9); } return; }
       if(this.state==='walk'&&this.target!=null){ const d=this.target-this.pos.x;
         if(Math.abs(d)<4){ this.pos.x=this.target; this.target=null;

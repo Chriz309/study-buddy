@@ -23,8 +23,7 @@
 
   function sizeDevice(){ const s=(state&&state.settings&&state.settings.size)||140; const h=s*dpr, w=h*aspect; return {w,h,cssH:s,cssW:s*aspect}; }
   function applySize(){ const d=sizeDevice(); if(!jelly.restx) jelly.place(d.w,d.h); else jelly.resize(d.w,d.h);
-    const faceW=d.cssW*0.72, faceH=d.cssH*0.66; faceSvg.style.width=faceW+'px'; faceSvg.style.height=faceH+'px';
-    jelly._rest={w:d.w,h:d.h,faceW,faceH,cssScale:1/dpr}; if(window.Engine) Engine.setSize(d.cssH); }
+    face.setRest(d.w,d.h,1/dpr); jelly._placed=true; if(window.Engine) Engine.setSize(d.cssH); }
 
   // ---- speech ----
   function speak(kind, force){
@@ -48,9 +47,10 @@
 
   // ---- engine hooks ----
   Engine.init({
-    onState:(st)=>{ clearInterval(zzzTimer);
+    onState:(st)=>{ clearInterval(zzzTimer); face.setBack(st==='climb');
       if(st==='sleep'){ face.setExpr('sleepy'); zzzTimer=setInterval(()=>{const p=petScreen();spawn('z','zzz',p.x,p.y);},950); }
       else if(st==='drag'){ face.setExpr('happy'); }
+      else if(st==='climb'){ /* back turned — face hidden */ }
       else if(st!=='fall'){ face.setExpr('neutral'); } },
     onLand:(vy)=>{ jelly.squash(Math.max(.3,Math.min(.9,vy/900))); face.setExpr('surprised'); setTimeout(()=>face.setExpr('neutral'),260); },
     onJump:()=>{ jelly.stretch(.55); face.setExpr('surprised'); },
@@ -63,12 +63,13 @@
       if(!ready) return;
       // idle liveliness: gentle plop + the face's own blink/glance brain
       if(['idle','sit'].includes(Engine.state)){ idleAcc+=dt; if(idleAcc>2.4){ idleAcc=0; if(!(state&&state.settings&&state.settings.reduceMotion)) jelly.squash(.08); } }
+      face.setWalking(Engine.state==='walk');
       face.idle(dt); face.step(dt); jelly.step(dt);
       // place body at the roaming position (device px)
       const cx=(Engine.pos.x+Engine.size/2)*dpr, gy=(Engine.pos.y+Engine.size)*dpr;
       jelly.setOrigin(cx,gy);
       jelly.draw();
-      if(jelly._rest) face.follow(jelly.getBounds(), jelly._rest);
+      if(jelly._placed) face.follow(jelly.getBounds());
       // speech bubble position
       if(speechEl.classList.contains('show')){ const b=jelly.getBounds();
         speechEl.style.left=((b.minx+b.maxx)/2/dpr)+'px'; speechEl.style.top=(b.miny/dpr-8)+'px'; }

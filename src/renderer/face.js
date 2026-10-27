@@ -26,7 +26,10 @@
         const hi=el('circle',{cx:cx-2.4,cy:EYE.y-3.3,r:2.7,fill:'#fff'});
         const hi2=el('circle',{cx:cx+2.2,cy:EYE.y+2.8,r:1.3,fill:'#fff','fill-opacity':.7});
         const arc=el('path',{d:`M${cx-6} ${EYE.y+1} Q${cx} ${EYE.y-6} ${cx+6} ${EYE.y+1}`,fill:'none',stroke:'#1b2338','stroke-width':3.3,'stroke-linecap':'round',visibility:'hidden'});
-        g.appendChild(ball);g.appendChild(hi);g.appendChild(hi2);g.appendChild(arc); g.ball=ball;g.hi=hi;g.hi2=hi2;g.arc=arc;g.cx=cx; return g; };
+        const heart=el('path',{d:`M${cx},${EYE.y+2} C${cx-1.2},${EYE.y-2.6} ${cx-6},${EYE.y-2.6} ${cx-6},${EYE.y+1.2} C${cx-6},${EYE.y+4} ${cx},${EYE.y+7.5} ${cx},${EYE.y+7.5} C${cx},${EYE.y+7.5} ${cx+6},${EYE.y+4} ${cx+6},${EYE.y+1.2} C${cx+6},${EYE.y-2.6} ${cx+1.2},${EYE.y-2.6} ${cx},${EYE.y+2} Z`,fill:'#ff5a7a',visibility:'hidden'});
+        const swirl=el('path',{d:`M${cx-4},${EYE.y-3} Q${cx+5},${EYE.y-4} ${cx+3},${EYE.y+2} Q${cx+1.5},${EYE.y+5.5} ${cx-2.5},${EYE.y+3.5} Q${cx-5},${EYE.y+1.5} ${cx-1},${EYE.y}`,fill:'none',stroke:'#1b2338','stroke-width':2,'stroke-linecap':'round',visibility:'hidden'});
+        g.appendChild(ball);g.appendChild(hi);g.appendChild(hi2);g.appendChild(arc);g.appendChild(heart);g.appendChild(swirl);
+        g.ball=ball;g.hi=hi;g.hi2=hi2;g.arc=arc;g.heart=heart;g.swirl=swirl;g.cx=cx; return g; };
       this.eL=mk(EYE.lx); this.eR=mk(EYE.rx);
       this.faceG=el('g');
       this.chL=el('ellipse',{cx:30,cy:60,rx:6.6,ry:4.6,fill:'#ff8fb0','fill-opacity':.6});
@@ -40,14 +43,17 @@
     }
     setRest(wDev,hDev,cssScale){ this.restWdev=wDev; this.restHdev=hDev; this.cssScale=cssScale;
       this.svg.style.width=(wDev*cssScale)+'px'; this.svg.style.height=(hDev*cssScale)+'px'; this.svg.style.transformOrigin='0 0'; }
-    setExpr(name){ this.expr=name; const happy=name==='happy',surprised=name==='surprised',sleepy=name==='sleepy';
-      for(const g of[this.eL,this.eR]){ const arc=happy;
-        g.ball.setAttribute('visibility',arc?'hidden':'visible'); g.hi.setAttribute('visibility',arc?'hidden':'visible');
-        g.hi2.setAttribute('visibility',arc?'hidden':'visible'); g.arc.setAttribute('visibility',arc?'visible':'hidden'); }
+    setExpr(name){ this.expr=name; const happy=name==='happy',surprised=name==='surprised',sleepy=name==='sleepy',love=name==='love',dizzy=name==='dizzy';
+      const showBall=!(happy||love||dizzy);
+      for(const g of[this.eL,this.eR]){
+        g.ball.setAttribute('visibility',showBall?'visible':'hidden'); g.hi.setAttribute('visibility',showBall?'visible':'hidden');
+        g.hi2.setAttribute('visibility',showBall?'visible':'hidden'); g.arc.setAttribute('visibility',happy?'visible':'hidden');
+        g.heart.setAttribute('visibility',love?'visible':'hidden'); g.swirl.setAttribute('visibility',dizzy?'visible':'hidden'); }
       this._eyeScaleBase=surprised?1.22:sleepy?0.42:1;
       this.mouthO.setAttribute('visibility',surprised?'visible':'hidden');
-      if(!surprised) this.mouth.setAttribute('d',happy?M.grin:sleepy?M.sleepy:M.smile);
-      this.mouth.setAttribute('fill',happy?'#1b2338':'none'); this.mouth.setAttribute('visibility',surprised?'hidden':'visible'); }
+      const d=(happy||love)?M.grin:sleepy?M.sleepy:dizzy?M.small:M.smile;
+      if(!surprised) this.mouth.setAttribute('d',d);
+      this.mouth.setAttribute('fill',(happy||love)?'#1b2338':'none'); this.mouth.setAttribute('visibility',surprised?'hidden':'visible'); }
     blink(){ this.blinkT=0.16; }
     glance(){ const a=[-1,0,1][Math.floor(Math.random()*3)],b=[-.6,0,.4][Math.floor(Math.random()*3)];
       this.lookTarget={x:a*2.7,y:b*2.0}; this._glanceBack=this.t+0.6+Math.random()*1.2; }

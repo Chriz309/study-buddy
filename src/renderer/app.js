@@ -59,16 +59,19 @@
     else if(st==='climb'){ /* back turned */ }
     else if(st!=='fall'){ face.setExpr('neutral'); } }
 
+  function baseExpr(){ return lastState==='sleep'?'sleepy':lastState==='drag'?'happy':'neutral'; }
+  let exprT=0; function transient(e,ms){ face.setExpr(e); clearTimeout(exprT); exprT=setTimeout(()=>{ if(lastState!=='climb') face.setExpr(baseExpr()); }, ms); }
   window.buddy.onPetEvent((e)=>{ if(!ready) return;
     switch(e.type){
-      case 'land': jelly.squash(Math.max(.3,Math.min(.9,(e.vy||400)/900))); face.setExpr('surprised'); setTimeout(()=>{ if(lastState!=='climb'&&lastState!=='sleep') face.setExpr(lastState==='drag'?'happy':'neutral'); },260); break;
+      case 'land': jelly.squash(Math.max(.3,Math.min(.9,(e.vy||400)/900))); transient('surprised',260); break;
       case 'hop': jelly.stretch(.30); break;
       case 'parachuteOpen': chuteOn=true; chute.style.display='block'; jelly.stretch(.2); break;
       case 'parachuteClose': chuteOn=false; chute.style.display='none'; break;
-      case 'jump': jelly.stretch(.55); face.setExpr('surprised'); break;
-      case 'pet': jelly.squash(.45); face.setExpr('happy'); face.talk(.6); hearts(); speak('pet'); break;
-      case 'fed': jelly.squash(.5); face.setExpr('happy'); face.talk(.8); hearts(); speak('fed'); break;
+      case 'jump': jelly.stretch(.55); transient('surprised',500); break;
+      case 'pet': jelly.squash(.45); transient('love',1100); face.talk(.6); hearts(); speak('pet'); break;
+      case 'fed': jelly.squash(.5); transient('love',1100); face.talk(.8); hearts(); speak('fed'); break;
       case 'grab': jelly.stretch(.35); face.setExpr('happy'); break;
+      case 'dizzy': transient('dizzy',1700); break;
       case 'look': face.glance(); break;
       case 'say': speak(e.kind||'idle'); break;
     } });

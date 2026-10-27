@@ -1,0 +1,46 @@
+appId: com.chrishook.studybuddy
+productName: Study Buddy
+copyright: Copyright © 2026 Christopher Blair Hook
+
+directories:
+  output: dist
+  buildResources: assets
+
+files:
+  - "src/**/*"
+  - "assets/**/*"
+  - "package.json"
+
+# Auto-update feed — GitHub Releases. Set owner/repo to your repository.
+publish:
+  provider: github
+  owner: Chriz309
+  repo: study-buddy
+
+win:
+  icon: assets/icon.ico
+  target:
+    - target: nsis          # installer, enables auto-update
+    - target: portable      # single double-click .exe, no install
+  artifactName: "StudyBuddy-${version}-${arch}.${ext}"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Study Buddy
+
+mac:
+  icon: assets/icon.png
+  category: public.app-category.entertainment
+  target:
+    - dmg
+    - zip
+
+linux:
+  icon: assets/icon.png
+  category: Utility
+  target:
+    - AppImage

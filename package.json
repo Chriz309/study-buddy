@@ -1,0 +1,24 @@
+{
+  "name": "study-buddy",
+  "productName": "Study Buddy",
+  "version": "0.2.0",
+  "description": "A quirky desktop companion that lives on your screen. From the 'Study time with Chris' engineering archive.",
+  "author": {
+    "name": "Christopher Blair Hook",
+    "email": "christopherblairhook@gmail.com"
+  },
+  "license": "MIT",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "pack": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "31.7.6",
+    "electron-builder": "24.13.3"
+  },
+  "dependencies": {
+    "electron-updater": "6.3.9"
+  }
+}

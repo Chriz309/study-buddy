@@ -1,0 +1,21 @@
+STUDY BUDDY  -  quick start
+===========================
+
+To get the installer (recommended):
+  -> Double-click  build-installer.bat
+     It installs what's needed and builds the installer into the dist\ folder.
+     When it finishes, that folder opens automatically. Use either:
+        StudyBuddy-0.1.0-Setup.exe      - installs it, keeps itself updated
+        StudyBuddy-0.1.0-portable.exe   - just double-click, nothing installed
+
+To just try it right now without building:
+  -> Double-click  run-studybuddy.bat
+
+Needs Node.js (the free "LTS" version from https://nodejs.org). The .bat files
+tell you if it's missing. The first run downloads Electron, so it needs internet
+and a few minutes - after that it's offline.
+
+Once it's running, look for the lightning-bolt tray icon (bottom-right, near the
+clock) to open the Shop & Settings, unlock characters, and tweak its personality.
+
+- Built for you, Chris.  (Credit & contact are in the app's About tab.)

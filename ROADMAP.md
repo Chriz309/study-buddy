@@ -2,6 +2,43 @@
 
 Handoff between build sessions. What's done, what's next, how to add content.
 
+## ⭐ CURRENT DIRECTION (v0.3, 2026-10-27) — READ FIRST
+Chris rejected hand-coded SVG art ("looks like MS Paint"). We pivoted to a real
+art + animation pipeline, and **focused on Blob only** until it's perfect. Other
+characters were removed from the catalog and return later via the gacha.
+
+**The pipeline (proven, in use):**
+1. Generate the character with **Canva** `mcp__Canva__generate-image` — ask for a
+   FACELESS body (so the face can animate), illustrated/kawaii, plain white bg.
+   The result PNG is saved locally under the session tool-results dir.
+2. **Cut out the background locally** with Python (scipy flood-fill from the edges —
+   keeps interior highlights). No Canva Pro needed. See scratchpad/cutout.py.
+   (Canva `remove-background` requires a paid plan — don't use it.)
+3. Bake the cut-out PNG as a **data URI** in `src/renderer/art.js` (WebGL taints
+   file:// textures, so data URI is required).
+4. Render with the **WebGL soft-body mesh** (`src/renderer/jelly.js`) for
+   jiggle/squash/stretch, plus a **separately animated vector face**
+   (`src/renderer/face.js` — blink, glance, happy/surprised/sleepy, talk) that
+   tracks the body's deformation.
+
+**Architecture now:**
+- `engine.js` = logic only (roaming position + behaviour state + event hooks).
+- `app.js` = owns the WebGL body + face, maps engine events → squash/expressions/
+  speech/particles. Full-screen transparent canvas overlay.
+- Controls are **tray-only** (the overlay right-click menu was buggy and removed).
+- Roam-all-monitors defaults ON.
+
+**To preview art/animation without Electron:** render in headless chromium with
+`--use-gl=angle --use-angle=swiftshader` and screenshot frames → GIF (see
+scratchpad/capture*.js). Always preview + send Chris a GIF before mass work.
+
+**GitHub:** repo is `Chriz309/study-buddy` (attached, pushable). Tag push is blocked
+by proxy policy — the CI publishes the release on a **manual "Run workflow"**
+(Actions tab) instead. electron-updater auto-updates installed copies.
+
+---
+
+
 ## DONE — Milestone 1 (foundation)
 Electron overlay (transparent, always-on-top, click-through except over pet); tray;
 multi-monitor world; physics + non-repeating behaviour scheduler; drag/throw/pat;

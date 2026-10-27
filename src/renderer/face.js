@@ -6,7 +6,7 @@
   const SVGNS='http://www.w3.org/2000/svg';
   const el=(n,a)=>{const e=document.createElementNS(SVGNS,n);for(const k in(a||{}))e.setAttribute(k,a[k]);return e;};
   const EYE={lx:40,rx:60,y:45,rxw:7.4,ryh:9.4};
-  const FOOT={ lx:45, rx:55, rxw:5.6, ryh:6.8, base:95 };  // small nubs hanging under the body
+  const FOOT={ lx:40, rx:60, rxw:7.2, ryh:8.2, base:95 };  // nubs hanging under the body, spaced + a bit bigger
   const M={ smile:'M43 57 Q50 64 57 57', grin:'M42 56 Q50 67 58 56 Q50 61 42 56 Z',
     small:'M46 59 Q50 62 54 59', sleepy:'M46 60 Q50 63 54 60' };
 

@@ -30,6 +30,7 @@ const Engine = {
   setSettings(s){ Object.assign(this.settings,s); },
   setCursor(p){ this.cursor=p; },
   setLedge(seg){ this.ledge=seg||null; },
+  onLedge(){ const L=this.ledge; if(!L||!this.onFloor) return false; const cx=this.pos.x+this.size/2; return cx>=L.x0&&cx<=L.x1&&Math.abs(this.pos.y-(L.y-this.size))<3; },
   floorAt(x){ const cx=x+this.size/2; let best=null;
     for(const f of this.world.floors) if(cx>=f.x0&&cx<=f.x1) best=best==null?f.y:Math.max(best,f.y);
     if(best==null) best=this.world.y1; let fy=best-this.size;
@@ -62,7 +63,8 @@ const Engine = {
     this.nextDecision=now+rnd(1500,3800)/(per==='hyper'?1.8:per==='sleepy'?.7:1); },
   run(b){ const mid=this.size/2,x0=this.world.x0,x1=this.world.x1;
     switch(b){
-      case 'walk': this.target=rnd(x0+mid,x1-mid); this.setState('walk',1e9); break;
+      case 'walk': { let a=x0+mid, b=x1-mid; if(this.onLedge()){ a=this.ledge.x0+mid*0.5; b=this.ledge.x1-mid*0.5; } // hop along the window edge when perched
+        this.target=rnd(a,b); this.setState('walk',1e9); break; }
       case 'idle': this.setState('idle',rnd(1200,3000)); break;
       case 'sit': this.setState('sit',rnd(2500,6000)); break;
       case 'sleep': this.nap(); break;

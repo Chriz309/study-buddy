@@ -6,7 +6,7 @@
   const SVGNS='http://www.w3.org/2000/svg';
   const el=(n,a)=>{const e=document.createElementNS(SVGNS,n);for(const k in(a||{}))e.setAttribute(k,a[k]);return e;};
   const EYE={lx:40,rx:60,y:45,rxw:7.4,ryh:9.4};
-  const FOOT={ly:92, ry:92, lx:39, rx:61, rxw:7, ryh:4.6, base:92};
+  const FOOT={ lx:45, rx:55, rxw:5.6, ryh:6.8, base:95 };  // small nubs hanging under the body
   const M={ smile:'M43 57 Q50 64 57 57', grin:'M42 56 Q50 67 58 56 Q50 61 42 56 Z',
     small:'M46 59 Q50 62 54 59', sleepy:'M46 60 Q50 63 54 60' };
 
@@ -18,8 +18,8 @@
     _build(){
       // feet first (behind body visually is impossible on overlay, so draw subtle)
       this.feet=el('g');
-      this.footL=el('ellipse',{cx:FOOT.lx,cy:FOOT.base,rx:FOOT.rxw,ry:FOOT.ryh,fill:'#49a9e8',stroke:'#1d3b5e','stroke-width':2.4});
-      this.footR=el('ellipse',{cx:FOOT.rx,cy:FOOT.base,rx:FOOT.rxw,ry:FOOT.ryh,fill:'#49a9e8',stroke:'#1d3b5e','stroke-width':2.4});
+      this.footL=el('ellipse',{cx:FOOT.lx,cy:FOOT.base,rx:FOOT.rxw,ry:FOOT.ryh,fill:'#3fa0ea',stroke:'#1d3b5e','stroke-width':2.6});
+      this.footR=el('ellipse',{cx:FOOT.rx,cy:FOOT.base,rx:FOOT.rxw,ry:FOOT.ryh,fill:'#3fa0ea',stroke:'#1d3b5e','stroke-width':2.6});
       this.feet.appendChild(this.footL); this.feet.appendChild(this.footR);
       const mk=(cx)=>{ const g=el('g');
         const ball=el('ellipse',{cx,cy:EYE.y,rx:EYE.rxw,ry:EYE.ryh,fill:'#1b2338'});
@@ -28,7 +28,11 @@
         const arc=el('path',{d:`M${cx-6} ${EYE.y+1} Q${cx} ${EYE.y-6} ${cx+6} ${EYE.y+1}`,fill:'none',stroke:'#1b2338','stroke-width':3.3,'stroke-linecap':'round',visibility:'hidden'});
         g.appendChild(ball);g.appendChild(hi);g.appendChild(hi2);g.appendChild(arc); g.ball=ball;g.hi=hi;g.hi2=hi2;g.arc=arc;g.cx=cx; return g; };
       this.eL=mk(EYE.lx); this.eR=mk(EYE.rx);
-      this.faceG=el('g'); this.pupils=el('g'); this.pupils.appendChild(this.eL); this.pupils.appendChild(this.eR);
+      this.faceG=el('g');
+      this.chL=el('ellipse',{cx:30,cy:60,rx:6.6,ry:4.6,fill:'#ff8fb0','fill-opacity':.6});
+      this.chR=el('ellipse',{cx:70,cy:60,rx:6.6,ry:4.6,fill:'#ff8fb0','fill-opacity':.6});
+      this.faceG.appendChild(this.chL); this.faceG.appendChild(this.chR);
+      this.pupils=el('g'); this.pupils.appendChild(this.eL); this.pupils.appendChild(this.eR);
       this.mouth=el('path',{d:M.smile,fill:'none',stroke:'#1b2338','stroke-width':2.9,'stroke-linecap':'round','stroke-linejoin':'round'});
       this.mouthO=el('ellipse',{cx:50,cy:58,rx:3.6,ry:4.4,fill:'#1b2338',visibility:'hidden'});
       this.faceG.appendChild(this.pupils); this.faceG.appendChild(this.mouth); this.faceG.appendChild(this.mouthO);
@@ -63,13 +67,12 @@
       for(const g of[this.eL,this.eR]) g.setAttribute('transform',`translate(${g.cx} ${EYE.y}) scale(1 ${sy}) translate(${-g.cx} ${-EYE.y})`);
       if(this.t<this.talkUntil&&this.expr!=='surprised'){ const o=1+Math.sin(this.t*26)*0.5;
         this.mouth.setAttribute('d',o>1.2?M.grin:M.small); this.mouth.setAttribute('fill',o>1.2?'#1b2338':'none'); }
-      // feet: step while walking, otherwise planted
-      if(this.walking||this.back){ this.phase+=dt*11;
-        const lift=3.2; const l=Math.max(0,Math.sin(this.phase))*lift, r=Math.max(0,Math.sin(this.phase+Math.PI))*lift;
+      // feet: gentle alternate lift while walking/climbing (no x shuffle, so it
+      // doesn't look like it's walking the wrong way), planted otherwise
+      if(this.walking||this.back){ this.phase+=dt*10;
+        const lift=2.6; const l=Math.max(0,Math.sin(this.phase))*lift, r=Math.max(0,Math.sin(this.phase+Math.PI))*lift;
         this.footL.setAttribute('cy',FOOT.base-l); this.footR.setAttribute('cy',FOOT.base-r);
-        this.footL.setAttribute('cx',FOOT.lx+Math.cos(this.phase)*1.3); this.footR.setAttribute('cx',FOOT.rx+Math.cos(this.phase+Math.PI)*1.3);
-      } else { this.footL.setAttribute('cy',FOOT.base); this.footR.setAttribute('cy',FOOT.base);
-        this.footL.setAttribute('cx',FOOT.lx); this.footR.setAttribute('cx',FOOT.rx); }
+      } else { this.footL.setAttribute('cy',FOOT.base); this.footR.setAttribute('cy',FOOT.base); }
     }
     follow(b){ const s=this.cssScale; const left=b.minx*s, top=b.miny*s;
       const sx=(b.maxx-b.minx)/this.restWdev, sy=(b.maxy-b.miny)/this.restHdev;

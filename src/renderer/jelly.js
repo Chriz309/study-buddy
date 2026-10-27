@@ -67,6 +67,7 @@
       for(let i=0;i<n;i++){ vx[i]=nvx[i]*damp; vy[i]=nvy[i]*damp; px[i]+=vx[i]*dt; py[i]+=vy[i]*dt; }
       for(let i=0;i<=N;i++){ const c=id(i,N); py[c]=0; vy[c]=0; } // feet planted at local ground
     }
+    clear(){ const gl=this.gl; gl.viewport(0,0,this.c.width,this.c.height); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); }
     getBounds(){ let a=1e9,b=1e9,cc=-1e9,d=-1e9,n=(this.N+1)*(this.N+1);
       for(let i=0;i<n;i++){const x=this.px[i],y=this.py[i];if(x<a)a=x;if(y<b)b=y;if(x>cc)cc=x;if(y>d)d=y;}
       return {minx:a+this.ox,miny:b+this.oy,maxx:cc+this.ox,maxy:d+this.oy}; }

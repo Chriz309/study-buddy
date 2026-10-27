@@ -21,8 +21,7 @@ win:
   icon: assets/icon.ico
   target:
     - target: nsis          # installer, enables auto-update
-    - target: portable      # single double-click .exe, no install
-  artifactName: "StudyBuddy-${version}-${arch}.${ext}"
+  artifactName: "StudyBuddy-Setup-${version}.${ext}"
 
 nsis:
   oneClick: false

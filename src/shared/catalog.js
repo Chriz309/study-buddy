@@ -9,20 +9,11 @@ const CURRENCY = { name: 'Sparks', symbol: '⚡' }; // ⚡
 //        'fly'   drifts higher + swoops (birds)
 //        'swim'  lurks below the screen, surfaces in arcs (sea creatures)
 // rarity: common | uncommon | rare | unique | legendary  (drives the future gacha)
+// Focused on Blob while we perfect the art/animation pipeline. More characters
+// return later via the gacha, each generated through the Canva -> cutout ->
+// soft-body-mesh pipeline. (search: ROSTER)
 const CHARACTERS = [
-  { id: 'blob',  name: 'Blob',     tier: 1, move: 'walk',  rarity: 'common',    cost: 0,     personality: 'sunny',   blurb: 'A cheerful little slime-bot. Your first friend.',        implemented: true  },
-  { id: 'pib',   name: 'Pib',      tier: 1, move: 'walk',  rarity: 'common',    cost: 250,   personality: 'smug',    blurb: 'A tiny cat certain the desktop belongs to it.',          implemented: true  },
-  { id: 'chirp', name: 'Chirp',    tier: 1, move: 'fly',   rarity: 'common',    cost: 400,   personality: 'perky',   blurb: 'A little bird that flits and swoops around the screen.',  implemented: true  },
-  { id: 'boo',   name: 'Boo',      tier: 1, move: 'float', rarity: 'uncommon',  cost: 600,   personality: 'shy',     blurb: 'A bashful ghost. Drifts, hides, peeks.',                  implemented: true  },
-  { id: 'quack', name: 'Quackers', tier: 2, move: 'walk',  rarity: 'uncommon',  cost: 1500,  personality: 'chaos',   blurb: 'A duck with no respect for your productivity.',           implemented: false },
-  { id: 'finn',  name: 'Finn',     tier: 2, move: 'swim',  rarity: 'rare',      cost: 3000,  personality: 'playful', blurb: 'A dolphin that surfaces from the bottom of your screen.', implemented: true  },
-  { id: 'axo',   name: 'Axo',      tier: 2, move: 'walk',  rarity: 'rare',      cost: 3500,  personality: 'derp',    blurb: 'An axolotl that walks on land, somehow. Always smiling.', implemented: false },
-  { id: 'fox',   name: 'Sly',      tier: 3, move: 'walk',  rarity: 'rare',      cost: 10000, personality: 'sly',     blurb: 'A clever fox with a big swishy tail.',                    implemented: false },
-  { id: 'jelly', name: 'Wobble',   tier: 3, move: 'float', rarity: 'rare',      cost: 6000,  personality: 'zen',     blurb: 'A jellyfish that bobs serenely through your day.',        implemented: false },
-  { id: 'octo',  name: 'Inko',     tier: 3, move: 'float', rarity: 'unique',    cost: 16000, personality: 'curious', blurb: 'An octopus. Eight arms, infinite mischief.',              implemented: false },
-  { id: 'cog',   name: 'Cog',      tier: 4, move: 'walk',  rarity: 'unique',    cost: 24000, personality: 'posh',    blurb: 'A brass arcade automaton who over-engineers everything.', implemented: false },
-  { id: 'ember', name: 'Ember',    tier: 4, move: 'fly',   rarity: 'legendary', cost: 36000, personality: 'fierce',  blurb: 'A pocket dragon. Small, dramatic, occasionally smoky.',   implemented: false },
-  { id: 'zrk',   name: 'Zrk',      tier: 4, move: 'float', rarity: 'legendary', cost: 50000, personality: 'alien',   blurb: 'A friendly alien, here to observe your snack habits.',    implemented: false },
+  { id: 'blob', name: 'Blob', tier: 1, move: 'walk', rarity: 'common', cost: 0, personality: 'sunny', blurb: 'A cheerful little slime. Squishy, glossy, alive.', implemented: true },
 ];
 
 const RARITIES = {
@@ -59,7 +50,7 @@ const DEFAULTS = {
     startOnBoot: false,
     paused: false,
     reduceMotion: false,
-    roamMonitors: false,       // cross to other monitors (off by default: avoids the paint glitch)
+    roamMonitors: true,        // cross to other monitors
     showAll: false,            // show every owned pet at once (future multi-pet)
   },
 };

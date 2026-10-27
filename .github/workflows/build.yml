@@ -17,9 +17,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
 
-      - run: npm ci
+      # no package-lock.json committed, so install (not ci) and no npm cache
+      - run: npm install --no-audit --no-fund
 
       # Publishes a GitHub Release (tagged v<version> from package.json) and
       # uploads the installer. Runs on a tag push OR a manual "Run workflow".

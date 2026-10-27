@@ -50,7 +50,7 @@ const Engine = {
   setState(s,dur){ if(this.state!==s) this.hooks.state&&this.hooks.state(s); this.state=s; this.stateUntil=this._now+(dur||0); this.lastChange=this._now; },
 
   decide(){ const now=this._now, per=this.settings.personality, mis=this.settings.mischief/100;
-    const w={walk:3,idle:2.4,sit:1.4,sleep:0.8,jump:1.0,climb:0.8*mis+.15,peek:0.7*mis+.1,say:1.0,look:1.6};
+    const w={walk:3,idle:2.4,sit:1.4,sleep:0.8,jump:1.0,bounce:1.6,climb:0.8*mis+.15,peek:0.7*mis+.1,say:1.0,look:1.6};
     if(per==='hyper'){w.walk+=2;w.jump+=2;w.sleep=.2;w.sit=.4;}
     if(per==='sleepy'){w.sleep+=2.5;w.sit+=2;w.walk-=1.2;}
     if(per==='naughty'){w.climb+=1.3;w.peek+=1;w.jump+=1;}
@@ -67,6 +67,7 @@ const Engine = {
       case 'sit': this.setState('sit',rnd(2500,6000)); break;
       case 'sleep': this.nap(); break;
       case 'jump': if(this.onFloor){ this.vel.y=-rnd(380,560); this.onFloor=false; this.setState('fall',1e9); this.hooks.event&&this.hooks.event('jump'); } break;
+      case 'bounce': if(this.onFloor){ this.vel.y=-rnd(150,240); this.vel.x=0; this.onFloor=false; this.setState('fall',1e9); this.hooks.event&&this.hooks.event('hop'); } break;
       case 'climb': this.climbWall(); break;
       case 'peek': this.peek(); break;
       case 'look': { const dir=(this.cursor&&isFinite(this.cursor.x))?sign(this.cursor.x-(this.pos.x+this.size/2)):0; this.hooks.event&&this.hooks.event('look',{dir}); this.setState('idle',rnd(900,1600)); break; }

@@ -55,8 +55,9 @@
       if(!surprised) this.mouth.setAttribute('d',d);
       this.mouth.setAttribute('fill',(happy||love)?'#1b2338':'none'); this.mouth.setAttribute('visibility',surprised?'hidden':'visible'); }
     blink(){ this.blinkT=0.16; }
-    glance(){ const a=[-1,0,1][Math.floor(Math.random()*3)],b=[-.6,0,.4][Math.floor(Math.random()*3)];
-      this.lookTarget={x:a*2.7,y:b*2.0}; this._glanceBack=this.t+0.6+Math.random()*1.2; }
+    glance(dir){ if(typeof dir==='number'&&dir!==0){ this.lookTarget={x:dir*2.8,y:0}; }
+      else { const a=[-1,0,1][Math.floor(Math.random()*3)],b=[-.6,0,.4][Math.floor(Math.random()*3)]; this.lookTarget={x:a*2.7,y:b*2.0}; }
+      this._glanceBack=this.t+0.7+Math.random()*1.3; }
     lookAt(dx){ this.lookTarget={x:Math.max(-3,Math.min(3,dx)),y:this.lookTarget.y}; this._glanceBack=this.t+1.2; }
     talk(sec){ this.talkUntil=this.t+(sec||1.2); }
     setWalking(on){ this.walking=on; }

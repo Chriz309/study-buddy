@@ -72,7 +72,7 @@
       case 'fed': jelly.squash(.5); transient('love',1100); face.talk(.8); hearts(); speak('fed'); break;
       case 'grab': jelly.stretch(.35); face.setExpr('happy'); break;
       case 'dizzy': transient('dizzy',1700); break;
-      case 'look': face.glance(); break;
+      case 'look': face.glance(e.dir); break;
       case 'say': speak(e.kind||'idle'); break;
     } });
 

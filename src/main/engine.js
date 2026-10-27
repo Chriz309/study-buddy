@@ -69,7 +69,7 @@ const Engine = {
       case 'jump': if(this.onFloor){ this.vel.y=-rnd(380,560); this.onFloor=false; this.setState('fall',1e9); this.hooks.event&&this.hooks.event('jump'); } break;
       case 'climb': this.climbWall(); break;
       case 'peek': this.peek(); break;
-      case 'look': this.hooks.event&&this.hooks.event('look'); this.setState('idle',rnd(900,1600)); break;
+      case 'look': { const dir=(this.cursor&&isFinite(this.cursor.x))?sign(this.cursor.x-(this.pos.x+this.size/2)):0; this.hooks.event&&this.hooks.event('look',{dir}); this.setState('idle',rnd(900,1600)); break; }
       case 'say': this.hooks.event&&this.hooks.event('say',{kind:Math.random()<.4?'study':'idle'}); this.setState('idle',1600); break;
     } },
   climbWall(){ const toLeft=this.pos.x<(this.world.x0+this.world.x1)/2; this.climbEdge=toLeft?this.world.x0:this.world.x1-this.size;

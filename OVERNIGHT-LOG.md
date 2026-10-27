@@ -1,6 +1,8 @@
 # Study Buddy — overnight work log
 
-Newest first. Each entry = one shipped improvement (pushed to GitHub; CI auto-builds a release so the app auto-updates).
+**Good morning, Chris!** Overnight I shipped **v0.3.3 → v0.3.12** (10 updates), all auto-released so your app updates itself. Highlights: smooth antenna-free slime head, **bouncy-hop movement** (feet only while climbing), **parachute** on high falls, **heart-eyes / dizzy / cursor-glance** reactions, **cookie-drop feeding**, idle bounces, richer speech, and **active-window perching + hopping along the window edge** (experimental — please confirm it works live). Deferred on purpose for your input: **fullscreen-hide** (needs live testing so it never hides the blob wrongly) and the **cat with multiple views** (after you OK the blob).
+
+Per-version detail below (newest first).
 
 ## 2026-10-28
 - **v0.3.12** — When perched on the active window's edge, the blob now **hops ALONG that edge** (keeps to the window) instead of wandering off it.

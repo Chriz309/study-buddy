@@ -79,14 +79,18 @@ const Engine = {
     const climbing=this._wantClimb&&Math.abs(this.pos.x-(this.climbEdge==null?-1e9:this.climbEdge))<2;
     if(climbing){ if(this.state!=='climb') this.setState('climb',1e9); this.pos.y-=spd*1.3*dt; this.facing=this.climbEdge===x0?1:-1;
       if(this.pos.y<this.world.y0+rnd(10,60)){ this._wantClimb=false; this.onFloor=false; this.vel.y=0; this.setState('fall',1e9); } return; }
-    if(this.state==='walk'&&this.target!=null){ const d=this.target-this.pos.x;
-      if(Math.abs(d)<4){ this.pos.x=this.target; this.target=null;
+    if(this.state==='walk'&&this.target!=null&&this.onFloor){ const d=this.target-this.pos.x, hp=(this.settings.speed||1);
+      if(Math.abs(d)<this.size*0.35){ this.pos.x=this.target; this.target=null;
         if(this._peeking){ this._peeking=false; this.hooks.event&&this.hooks.event('look'); this.setState('idle',rnd(900,1800)); }
         else if(!this._wantClimb) this.setState('idle',rnd(400,1200)); }
-      else { this.facing=sign(d); this.pos.x+=this.facing*spd*dt; } }
+      else if(now>=(this._nextHop||0)){ // slimes hop, they don't walk
+        this.facing=sign(d); this.vel.y=-rnd(230,320)*(0.9+0.3*hp); this.vel.x=this.facing*rnd(120,185)*(0.7+0.5*hp);
+        this.onFloor=false; this.hooks.event&&this.hooks.event('hop'); } }
     const fy=this.floorAt(this.pos.x);
     if(this.pos.y<fy||this.vel.y<0){ this.vel.y+=2300*dt; this.pos.y+=this.vel.y*dt; this.onFloor=false; this.pos.x+=this.vel.x*dt; this.vel.x*=(1-dt*1.6); }
-    if(this.pos.y>=fy){ if(!this.onFloor&&this.vel.y>120) this.hooks.event&&this.hooks.event('land',{vy:this.vel.y}); this.pos.y=fy; this.vel.y=0; this.onFloor=true; if(this.state==='fall') this.setState('idle',400); }
+    if(this.pos.y>=fy){
+      if(!this.onFloor){ if(this.vel.y>120) this.hooks.event&&this.hooks.event('land',{vy:this.vel.y}); this._nextHop=now+rnd(90,240); if(this.state==='fall') this.setState('idle',400); }
+      this.pos.y=fy; this.vel.y=0; this.onFloor=true; }
     this.pos.x=clamp(this.pos.x,x0,x1-this.size);
     if(now>this.nextDecision&&this.onFloor&&!this._wantClimb&&['idle','sit','walk'].includes(this.state)&&(this.state!=='walk'||this.target==null)) this.decide();
     if(this.state==='sleep'&&now>this.stateUntil) this.setState('idle',300); },

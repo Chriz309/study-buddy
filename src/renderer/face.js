@@ -20,7 +20,7 @@
       this.feet=el('g');
       this.footL=el('ellipse',{cx:FOOT.lx,cy:FOOT.base,rx:FOOT.rxw,ry:FOOT.ryh,fill:'#3fa0ea',stroke:'#1d3b5e','stroke-width':2.6});
       this.footR=el('ellipse',{cx:FOOT.rx,cy:FOOT.base,rx:FOOT.rxw,ry:FOOT.ryh,fill:'#3fa0ea',stroke:'#1d3b5e','stroke-width':2.6});
-      this.feet.appendChild(this.footL); this.feet.appendChild(this.footR);
+      this.feet.appendChild(this.footL); this.feet.appendChild(this.footR); this.feet.style.display='none'; // feet only while climbing
       const mk=(cx)=>{ const g=el('g');
         const ball=el('ellipse',{cx,cy:EYE.y,rx:EYE.rxw,ry:EYE.ryh,fill:'#1b2338'});
         const hi=el('circle',{cx:cx-2.4,cy:EYE.y-3.3,r:2.7,fill:'#fff'});
@@ -54,7 +54,7 @@
     lookAt(dx){ this.lookTarget={x:Math.max(-3,Math.min(3,dx)),y:this.lookTarget.y}; this._glanceBack=this.t+1.2; }
     talk(sec){ this.talkUntil=this.t+(sec||1.2); }
     setWalking(on){ this.walking=on; }
-    setBack(on){ if(this.back===on)return; this.back=on; this.faceG.style.display=on?'none':''; }
+    setBack(on){ if(this.back===on)return; this.back=on; this.faceG.style.display=on?'none':''; this.feet.style.display=on?'':'none'; }
     idle(dt){ this.nextBlink-=dt;
       if(this.nextBlink<=0){ this.blink(); if(Math.random()<.25) setTimeout(()=>this.blink(),160); this.nextBlink=1.6+Math.random()*3.6; }
       if(this._glanceBack&&this.t>this._glanceBack){ this.lookTarget={x:0,y:0}; this._glanceBack=0; }
@@ -67,12 +67,10 @@
       for(const g of[this.eL,this.eR]) g.setAttribute('transform',`translate(${g.cx} ${EYE.y}) scale(1 ${sy}) translate(${-g.cx} ${-EYE.y})`);
       if(this.t<this.talkUntil&&this.expr!=='surprised'){ const o=1+Math.sin(this.t*26)*0.5;
         this.mouth.setAttribute('d',o>1.2?M.grin:M.small); this.mouth.setAttribute('fill',o>1.2?'#1b2338':'none'); }
-      // feet: gentle alternate lift while walking/climbing (no x shuffle, so it
-      // doesn't look like it's walking the wrong way), planted otherwise
-      if(this.walking||this.back){ this.phase+=dt*10;
+      // feet show only while climbing (back turned): gentle alternate grip
+      if(this.back){ this.phase+=dt*10;
         const lift=2.6; const l=Math.max(0,Math.sin(this.phase))*lift, r=Math.max(0,Math.sin(this.phase+Math.PI))*lift;
-        this.footL.setAttribute('cy',FOOT.base-l); this.footR.setAttribute('cy',FOOT.base-r);
-      } else { this.footL.setAttribute('cy',FOOT.base); this.footR.setAttribute('cy',FOOT.base); }
+        this.footL.setAttribute('cy',FOOT.base-l); this.footR.setAttribute('cy',FOOT.base-r); }
     }
     follow(b){ const s=this.cssScale; const left=b.minx*s, top=b.miny*s;
       const sx=(b.maxx-b.minx)/this.restWdev, sy=(b.maxy-b.miny)/this.restHdev;

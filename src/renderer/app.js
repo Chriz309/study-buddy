@@ -60,6 +60,7 @@
   window.buddy.onPetEvent((e)=>{ if(!ready) return;
     switch(e.type){
       case 'land': jelly.squash(Math.max(.3,Math.min(.9,(e.vy||400)/900))); face.setExpr('surprised'); setTimeout(()=>{ if(lastState!=='climb'&&lastState!=='sleep') face.setExpr(lastState==='drag'?'happy':'neutral'); },260); break;
+      case 'hop': jelly.stretch(.30); break;
       case 'jump': jelly.stretch(.55); face.setExpr('surprised'); break;
       case 'pet': jelly.squash(.45); face.setExpr('happy'); face.talk(.6); hearts(); speak('pet'); break;
       case 'fed': jelly.squash(.5); face.setExpr('happy'); face.talk(.8); hearts(); speak('fed'); break;

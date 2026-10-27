@@ -3,7 +3,9 @@
    process (which owns the roaming brain); this file only animates + renders. */
 (function () {
   const $=(s)=>document.querySelector(s);
-  const glc=$('#gl'), faceSvg=$('#face'), fx=$('#fx'), speechEl=$('#speech');
+  const glc=$('#gl'), faceSvg=$('#face'), fx=$('#fx'), speechEl=$('#speech'), chute=$('#chute');
+  if(window.PARACHUTE_ART) chute.src=window.PARACHUTE_ART;
+  let chuteOn=false;
   const IMG=window.BLOB_ART||'art/blob-body.png';
   let dpr=Math.max(1,window.devicePixelRatio||1);
   let jelly, face, settings=null, ready=false;
@@ -61,6 +63,8 @@
     switch(e.type){
       case 'land': jelly.squash(Math.max(.3,Math.min(.9,(e.vy||400)/900))); face.setExpr('surprised'); setTimeout(()=>{ if(lastState!=='climb'&&lastState!=='sleep') face.setExpr(lastState==='drag'?'happy':'neutral'); },260); break;
       case 'hop': jelly.stretch(.30); break;
+      case 'parachuteOpen': chuteOn=true; chute.style.display='block'; jelly.stretch(.2); break;
+      case 'parachuteClose': chuteOn=false; chute.style.display='none'; break;
       case 'jump': jelly.stretch(.55); face.setExpr('surprised'); break;
       case 'pet': jelly.squash(.45); face.setExpr('happy'); face.talk(.6); hearts(); speak('pet'); break;
       case 'fed': jelly.squash(.5); face.setExpr('happy'); face.talk(.8); hearts(); speak('fed'); break;
@@ -79,6 +83,8 @@
     jelly.setOrigin((pet.x+pet.size/2)*dpr, (pet.y+pet.size)*dpr);
     jelly.draw(); if(jelly._placed) face.follow(jelly.getBounds());
     if(speechEl.classList.contains('show')){ const b=jelly.getBounds(); speechEl.style.left=((b.minx+b.maxx)/2/dpr)+'px'; speechEl.style.top=(b.miny/dpr-8)+'px'; }
+    if(chuteOn){ const cw=pet.size*1.35, chh=cw*1.081, sway=Math.sin(now/420)*7;
+      chute.style.width=cw+'px'; chute.style.left=(pet.x+pet.size/2-cw/2+sway)+'px'; chute.style.top=(pet.y-chh+pet.size*0.18)+'px'; }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

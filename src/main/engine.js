@@ -10,7 +10,7 @@ const Engine = {
   hooks:{}, size:140, baseSpeed:80,
   pos:{x:300,y:200}, vel:{x:0,y:0}, facing:1,
   state:'idle', stateUntil:0, nextDecision:0, lastChange:0, target:null,
-  onFloor:false, dragging:false, recent:[], cursor:{x:0,y:0},
+  onFloor:false, dragging:false, parachute:false, recent:[], cursor:{x:0,y:0},
   settings:{speed:1,personality:'chill',mischief:25},
   world:{x0:0,y0:0,x1:1280,y1:720,floors:[]}, lastTick:0, _wantClimb:false, _peeking:false,
 
@@ -37,7 +37,8 @@ const Engine = {
   dragTo(x,y){ const nx=clamp(x-this.size/2,this.world.x0-this.size*0.3,this.world.x1-this.size*0.7);
     const ny=clamp(y-this.size/2,this.world.y0-this.size*0.3,this.world.y1-this.size*0.3);
     this.vel.x=(nx-this.pos.x)*12; this.vel.y=(ny-this.pos.y)*12; this.pos.x=nx; this.pos.y=ny; },
-  release(){ this.dragging=false; this.onFloor=false; this.vel.x=clamp(this.vel.x,-1400,1400); this.vel.y=clamp(this.vel.y,-1400,1400); this.setState('fall',1e9); },
+  release(){ this.dragging=false; this.onFloor=false; this.vel.x=clamp(this.vel.x,-1400,1400); this.vel.y=clamp(this.vel.y,-1400,1400); this.setState('fall',1e9); this._maybeParachute(); },
+  _maybeParachute(){ const drop=this.floorAt(this.pos.x)-this.pos.y; if(!this.parachute && drop>150 && Math.random()<0.4){ this.parachute=true; if(this.vel.y>120)this.vel.y=120; this.hooks.event&&this.hooks.event('parachuteOpen'); } },
   petted(){ this.hooks.event&&this.hooks.event('pet'); },
   nap(){ this.setState('sleep',rnd(7000,15000)); this.hooks.event&&this.hooks.event('say',{kind:'sleep'}); },
 
@@ -87,9 +88,14 @@ const Engine = {
         this.facing=sign(d); this.vel.y=-rnd(230,320)*(0.9+0.3*hp); this.vel.x=this.facing*rnd(120,185)*(0.7+0.5*hp);
         this.onFloor=false; this.hooks.event&&this.hooks.event('hop'); } }
     const fy=this.floorAt(this.pos.x);
-    if(this.pos.y<fy||this.vel.y<0){ this.vel.y+=2300*dt; this.pos.y+=this.vel.y*dt; this.onFloor=false; this.pos.x+=this.vel.x*dt; this.vel.x*=(1-dt*1.6); }
+    if(this.pos.y<fy||this.vel.y<0){
+      const g=this.parachute?520:2300; this.vel.y+=g*dt;
+      if(this.parachute){ if(this.vel.y>150)this.vel.y=150; this.pos.x+=Math.sin(now/480)*22*dt; }
+      this.pos.y+=this.vel.y*dt; this.onFloor=false; this.pos.x+=this.vel.x*dt; this.vel.x*=(1-dt*(this.parachute?2.4:1.6));
+      if(this.parachute && (fy-this.pos.y)<46){ this.parachute=false; this.hooks.event&&this.hooks.event('parachuteClose'); } }
     if(this.pos.y>=fy){
-      if(!this.onFloor){ if(this.vel.y>120) this.hooks.event&&this.hooks.event('land',{vy:this.vel.y}); this._nextHop=now+rnd(90,240); if(this.state==='fall') this.setState('idle',400); }
+      if(!this.onFloor){ if(this.parachute){ this.parachute=false; this.hooks.event&&this.hooks.event('parachuteClose'); }
+        if(this.vel.y>120) this.hooks.event&&this.hooks.event('land',{vy:this.vel.y}); this._nextHop=now+rnd(90,240); if(this.state==='fall') this.setState('idle',400); }
       this.pos.y=fy; this.vel.y=0; this.onFloor=true; }
     this.pos.x=clamp(this.pos.x,x0,x1-this.size);
     if(now>this.nextDecision&&this.onFloor&&!this._wantClimb&&['idle','sit','walk'].includes(this.state)&&(this.state!=='walk'||this.target==null)) this.decide();

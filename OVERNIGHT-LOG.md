@@ -3,6 +3,7 @@
 Newest first. Each entry = one shipped improvement (pushed to GitHub; CI auto-builds a release so the app auto-updates).
 
 ## 2026-10-28
+- **v0.3.11** — More speech variety (study-motivation flavoured lines).
 - **v0.3.10** — Ambient little **in-place bounces** when idle (springy slime life).
 - **v0.3.9** — **Food drop on feed**: feeding drops a cookie from above into the blob's open mouth; it catches, chews, hearts + sparkle.
 - **v0.3.8** — Occasional **glance toward your cursor** while idle (feels aware of you).

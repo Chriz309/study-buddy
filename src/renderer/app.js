@@ -27,10 +27,12 @@
 
   function jiggle(){ return settings && typeof settings.jiggle==='number' ? settings.jiggle : 1.1; }
 
-  const LINES={ greet:["Hi! I'm Blob. I live here now.","Blob, reporting for study duty!"],
-    idle:["What are we working on?","You've got this.","Hydrate — that's an order.","*hums quietly*","I counted your tabs. I'm just concerned."],
-    pet:["eeee!","again!","boop received ✅","hehe"], sleep:["zzz...","5 more minutes..."],
-    study:["Past paper > panic.","A derivative a day keeps the retest away."], fed:["yum!","tasty ✨","more?"] };
+  const LINES={ greet:["Hi! I'm Blob. I live here now.","Blob, reporting for study duty!","ready when you are 💪"],
+    idle:["What are we working on?","You've got this.","Hydrate — that's an order.","*hums quietly*","I counted your tabs. I'm just concerned.",
+          "one more section, then a break?","your future self says thanks.","small steps, big marks.","posture check! sit up 🙂","you're doing better than you think."],
+    pet:["eeee!","again!","boop received ✅","hehe","best human","♥"], sleep:["zzz...","5 more minutes...","recharging..."],
+    study:["Past paper > panic.","A derivative a day keeps the retest away.","do the hard question first.","revise it once more, trust me.",
+           "you pass, I pass. deal?","exams fear the prepared."], fed:["yum!","tasty ✨","more?","nom nom","10/10 snack"] };
   function speak(kind, force){ if(settings&&settings.speech===false&&!force) return;
     let chatter=(settings&&typeof settings.chatter==='number')?settings.chatter:0.6;
     if(!force&&(kind==='idle'||kind==='study')&&Math.random()>chatter) return;

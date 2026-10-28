@@ -42,7 +42,7 @@
     buildDome();
     const cost = state.gumballCost || 500;
     const pool = state.gumballPool || [];
-    $('#gmCost').textContent = cost + '⚡';
+    $('#gmCost').textContent = cost.toLocaleString() + '⚡';
     const crank = $('#gmCrank'), desc = $('#gmDesc'), res = $('#gmResult');
     if (pool.length === 0) {
       crank.disabled = true;

@@ -37,4 +37,5 @@ contextBridge.exposeInMainWorld('buddy', {
   // updates
   checkUpdate:   () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  dismissUpdate: () => ipcRenderer.send('update:later'),
 });

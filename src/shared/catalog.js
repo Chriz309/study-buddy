@@ -3,7 +3,11 @@
 // the renderer (src/renderer/characters.js), keyed by the same `id`.
 
 const CURRENCY = { name: 'Sparks', symbol: '⚡' }; // ⚡
-const GUMBALL_COST = 500;   // cost of one gumball-machine roll (random unowned buddy)
+// Cost of one gumball-machine roll (random unowned buddy). Deliberately steep:
+// base earn is 1 Spark/sec (+0.4/sec per extra owned buddy, +0.1/sec per feed
+// level), so at ~8 h/day of the app running this is roughly a week's earnings —
+// a real reward, not a formality. Tune this single number to taste.
+const GUMBALL_COST = 300000;
 
 // move:  'walk'  gravity, walks + climbs edges
 //        'float' drifts, ignores gravity (ghosts)

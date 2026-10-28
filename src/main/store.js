@@ -38,7 +38,6 @@ function load() {
   if (!state.version || state.version < 3) {
     state.owned = ['blob'];
     state.active = 'blob';
-    if (!(state.sparks >= GUMBALL_COST)) state.sparks = GUMBALL_COST;
     state.version = 3;
     save();
   }

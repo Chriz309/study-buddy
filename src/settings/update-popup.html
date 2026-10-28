@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src data:;" />
+  <style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; background: transparent; overflow: hidden;
+  font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none; user-select: none; cursor: default; }
+.card { position: absolute; inset: 8px; background: linear-gradient(160deg, #20202c, #16161f);
+  border: 1px solid #ffd23f; border-radius: 16px; padding: 15px 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 12px;
+  animation: pop .22s cubic-bezier(.3,1.5,.5,1); }
+@keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
+.row { display: flex; align-items: center; gap: 12px; }
+.logo { font-size: 30px; filter: drop-shadow(0 0 7px rgba(255,210,63,.7)); }
+.t { font-size: 15px; font-weight: 900; color: #ffffff; }
+.s { font-size: 12px; color: #a6a6bd; margin-top: 2px; line-height: 1.35; }
+.btns { display: flex; gap: 9px; justify-content: flex-end; margin-top: auto; }
+button { all: unset; cursor: pointer; padding: 9px 15px; border-radius: 10px; font-size: 12.5px; font-weight: 800; }
+#later { color: #cfcfe0; border: 1px solid #33333f; }
+#later:hover { border-color: #53d6ff; }
+#go { background: #ffd23f; color: #1a1405; box-shadow: 0 3px 0 #b78f10; }
+#go:hover { filter: brightness(1.06); }
+#go:active { transform: translateY(2px); box-shadow: 0 1px 0 #b78f10; }
+  </style>
+  <title>Update</title>
+</head>
+<body>
+  <div class="card">
+    <div class="row">
+      <span class="logo">⚡</span>
+      <div><div class="t">Study Buddy update ready</div><div class="s" id="sub">A new version is ready to install.</div></div>
+    </div>
+    <div class="btns">
+      <button id="later">Later</button>
+      <button id="go">Restart &amp; update</button>
+    </div>
+  </div>
+  <script src="update-popup.js"></script>
+</body>
+</html>

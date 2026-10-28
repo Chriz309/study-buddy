@@ -111,7 +111,7 @@
 
   // ---- input (this window is interactive only when the cursor is over the pet) ----
   let dragId=null,lastPt=null,moved=false,downAt=0;
-  function overPet(x,y){ const pad=14; return pet.show && x>=pet.x-pad && x<=pet.x+pet.size+pad && y>=pet.y-pad && y<=pet.y+pet.size+pad; }
+  function overPet(x,y){ const pad=Math.max(18, pet.size*0.5); return pet.show && x>=pet.x-pad && x<=pet.x+pet.size+pad && y>=pet.y-pad && y<=pet.y+pet.size+pad; }
   window.addEventListener('pointerdown',(e)=>{ if(e.button===2) return; if(!overPet(e.clientX,e.clientY)) return;
     dragId=e.pointerId; moved=false; downAt=Date.now(); lastPt={x:e.clientX,y:e.clientY};
     try{glc.setPointerCapture(e.pointerId);}catch{} e.preventDefault(); });

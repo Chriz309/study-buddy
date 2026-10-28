@@ -52,7 +52,8 @@ const Engine = {
   release(){ this.dragging=false;
     if(this.moveType==='float'){ this.target=null; this._wrapping=false; this.setState('idle',300); return; }   // ghosts just resume floating
     this.onFloor=false; this.vel.x=clamp(this.vel.x,-1400,1400); this.vel.y=clamp(this.vel.y,-1400,1400); this.setState('fall',1e9);
-    if(Math.hypot(this.vel.x,this.vel.y)>950) this.hooks.event&&this.hooks.event('dizzy'); this._maybeParachute(); },
+    if(Math.hypot(this.vel.x,this.vel.y)>950) this.hooks.event&&this.hooks.event('dizzy');
+    this._maybeParachute(); this._chuteRolled=true; },   // one roll per throw (don't also roll the self-fall chance)
   _maybeParachute(){ const drop=this.floorAt(this.pos.x)-this.pos.y; if(!this.parachute && drop>150 && Math.random()<0.4){ this.parachute=true; if(this.vel.y>120)this.vel.y=120; this.hooks.event&&this.hooks.event('parachuteOpen'); } },
   petted(){ this.hooks.event&&this.hooks.event('pet'); },
   nap(){ this.setState('sleep',rnd(7000,15000)); this.hooks.event&&this.hooks.event('say',{kind:'sleep'}); },
@@ -168,6 +169,6 @@ const Engine = {
     else { this._wrapping=false; this.target={x:rnd(W0+40,W1-40),y:rnd(H0+40,H0+(H1-H0)*0.62)}; if(Math.random()<.35)this.hooks.event&&this.hooks.event('say',{kind:'idle'}); this.setState('idle',0); }
     this.nextDecision=now+rnd(2600,4800);
   },
-  hitTest(x,y){ const pad=14; return x>=this.pos.x-pad&&x<=this.pos.x+this.size+pad&&y>=this.pos.y-pad&&y<=this.pos.y+this.size+pad; },
+  hitTest(x,y,pad){ pad=(pad==null)?14:pad; return x>=this.pos.x-pad&&x<=this.pos.x+this.size+pad&&y>=this.pos.y-pad&&y<=this.pos.y+this.size+pad; },
 };
 module.exports = Engine;

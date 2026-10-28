@@ -102,9 +102,12 @@ function broadcastPet() {
   }
 }
 function updateInteractive(cur) {
-  const d = ownerDisplay(); const hit = !!d && engine.hitTest(cur.x, cur.y);
+  const d = ownerDisplay();
+  // generous grab margin (scales up for tiny sprites); stay interactive while being dragged
+  const pad = Math.max(18, engine.size * 0.5);
+  const hit = !!d && (engine.dragging || engine.hitTest(cur.x, cur.y, pad));
   for (const [id, w] of overlays) { if (!w || w.isDestroyed()) continue;
-    const want = hit && d && id === d.id;
+    const want = hit && d && id === d.id && w.isVisible();
     if (w._interactive !== want) { w._interactive = want;
       if (want) w.setIgnoreMouseEvents(false); else w.setIgnoreMouseEvents(true, { forward: true }); }
   }

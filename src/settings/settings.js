@@ -216,7 +216,7 @@
       if (inst) inst.style.display = ready ? '' : 'none';
       if (chk) chk.style.display = ready ? 'none' : '';
     }
-    const hb = $('#ctlHide'); if (hb) hb.textContent = state.buddyHidden ? '👋 Show buddy' : '🙈 Hide buddy';
+    const hb = $('#ctlHide'); if (hb) { hb.textContent = state.buddyHidden ? '👋' : '🙈'; hb.title = state.buddyHidden ? 'Show buddy' : 'Hide buddy'; }
   }
   wireCrank();
   $('#checkUpdate').addEventListener('click', () => { window.buddy.checkUpdate(); $('#updateStatus').textContent = 'Checking…'; });

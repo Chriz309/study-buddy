@@ -42,21 +42,35 @@ function createPetWindow() {
     type: process.platform === 'win32' ? undefined : 'panel',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), backgroundThrottling: false },
   });
-  petWin._interactive = false; petWin._localX = 0; petWin._localY = 0;
+  petWin._interactive = false; petWin._localX = 0; petWin._localY = 0; petWin._shown = true;
   petWin.setAlwaysOnTop(true, 'screen-saver');
   petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
   petWin.setIgnoreMouseEvents(true, { forward: true });
   petWin.loadFile(INDEX);
-  petWin.once('ready-to-show', () => { applyVisibility(); petWin.webContents.send('state', fullState()); });
+  // show once so the window exists; after this we only fade opacity, never hide()
+  petWin.once('ready-to-show', () => { petWin.showInactive(); applyVisibility(); petWin.webContents.send('state', fullState()); });
   petWin.on('closed', () => { petWin = null; });
 }
 // visible unless the user hid it, or a fullscreen app owns the display it's on
 function petShouldShow() { if (userHidden) return false; const d = ownerDisplay(); return !(d && fsDisplays.has(d.id)); }
+// Toggle visibility WITHOUT hide()/show(): on Windows that cycle resets the
+// transparent/click-through window styles and left the pet un-clickable after
+// exiting fullscreen. Instead we fade opacity + drop topmost so it neither shows
+// nor interferes, while the window (and its mouse styles) stay intact.
 function applyVisibility() {
   if (!petWin || petWin.isDestroyed()) return;
   const vis = petShouldShow();
-  if (vis && !petWin.isVisible()) petWin.showInactive();
-  else if (!vis && petWin.isVisible()) petWin.hide();
+  if (petWin._shown === vis) return;
+  petWin._shown = vis;
+  try {
+    if (vis) {
+      petWin.setOpacity(1); petWin.setAlwaysOnTop(true, 'screen-saver');
+      petWin.setIgnoreMouseEvents(true, { forward: true }); petWin._interactive = null; petWin._iTick = 99;
+    } else {
+      petWin.setIgnoreMouseEvents(true, { forward: true }); petWin.setAlwaysOnTop(false); petWin.setOpacity(0);
+      if (petWin.webContents && !petWin.webContents.isDestroyed()) petWin.webContents.send('pet', { show: false });
+    }
+  } catch {}
 }
 function showBuddy() { userHidden = false; if (!petWin || petWin.isDestroyed()) createPetWindow(); applyVisibility(); }
 function hideBuddy() { userHidden = true; applyVisibility(); }
@@ -88,14 +102,14 @@ function startEngine() {
   syncEngineSettings(); syncActiveChar();
 
   setInterval(() => {
-    if (!petWin || petWin.isDestroyed() || userHidden) return;
+    if (!petWin || petWin.isDestroyed()) return;
     const now = Date.now();
     const cur = screen.getCursorScreenPoint();
     engine.setCursor({ x: cur.x, y: cur.y });
     if (grabOff && engine.dragging) engine.dragTo(cur.x - grabOff.dx + engine.size / 2, cur.y - grabOff.dy + engine.size / 2);
     engine.tick(now);
     applyVisibility();
-    if (petWin.isVisible()) { positionPetWindow(); sendPet(); setPetInteractive(cur); keepOnTop(); }
+    if (petWin._shown) { positionPetWindow(); sendPet(); setPetInteractive(cur); keepOnTop(); }
   }, 1000 / 60);
 }
 function positionPetWindow() {
@@ -113,7 +127,7 @@ function sendPet() {
   petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, size: engine.size, state: engine.state, facing: engine.facing });
 }
 function setPetInteractive(cur) {
-  if (!petWin || petWin.isDestroyed() || !petWin.isVisible()) return;
+  if (!petWin || petWin.isDestroyed() || !petWin._shown) return;
   const pad = Math.max(18, engine.size * 0.5);
   const want = engine.dragging || engine.hitTest(cur.x, cur.y, pad);
   // Re-assert periodically (every ~0.5s) even when unchanged: a setBounds / DPI

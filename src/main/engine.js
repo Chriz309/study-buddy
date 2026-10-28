@@ -12,7 +12,7 @@ const Engine = {
   state:'idle', stateUntil:0, nextDecision:0, lastChange:0, target:null,
   onFloor:false, dragging:false, parachute:false, recent:[], cursor:{x:0,y:0},
   settings:{speed:1,personality:'chill',mischief:25},
-  world:{x0:0,y0:0,x1:1280,y1:720,floors:[]}, ledge:null, lastTick:0, _wantClimb:false, _peeking:false,
+  world:{x0:0,y0:0,x1:1280,y1:720,floors:[]}, ledge:null, lastTick:0, _wantClimb:false, _peeking:false, _climbStopY:null,
 
   init(hooks, now){ this.hooks=hooks||{}; this.lastTick=now; this.lastChange=now; },
 
@@ -51,7 +51,8 @@ const Engine = {
   setState(s,dur){ if(this.state!==s) this.hooks.state&&this.hooks.state(s); this.state=s; this.stateUntil=this._now+(dur||0); this.lastChange=this._now; },
 
   decide(){ const now=this._now, per=this.settings.personality, mis=this.settings.mischief/100;
-    const w={walk:3,idle:2.4,sit:1.4,sleep:0.8,jump:1.0,bounce:1.6,climb:0.8*mis+.15,peek:0.7*mis+.1,say:1.0,look:1.6};
+    const w={walk:3,idle:2.4,sit:1.4,sleep:0.8,jump:1.0,bounce:1.6,climb:0.8*mis+.15,peek:0.7*mis+.1,say:1.0,look:1.6,
+      toWindow:(this.ledge&&!this.onLedge())?2.4:0};
     if(per==='hyper'){w.walk+=2;w.jump+=2;w.sleep=.2;w.sit=.4;}
     if(per==='sleepy'){w.sleep+=2.5;w.sit+=2;w.walk-=1.2;}
     if(per==='naughty'){w.climb+=1.3;w.peek+=1;w.jump+=1;}
@@ -71,6 +72,10 @@ const Engine = {
       case 'jump': if(this.onFloor){ this.vel.y=-rnd(380,560); this.onFloor=false; this.setState('fall',1e9); this.hooks.event&&this.hooks.event('jump'); } break;
       case 'bounce': if(this.onFloor){ this.vel.y=-rnd(150,240); this.vel.x=0; this.onFloor=false; this.setState('fall',1e9); this.hooks.event&&this.hooks.event('hop'); } break;
       case 'climb': this.climbWall(); break;
+      case 'toWindow': { const L=this.ledge; if(!L){ this.setState('idle',600); break; }
+        const nearLeft=Math.abs(this.pos.x-L.x0)<=Math.abs(this.pos.x-(L.x1-this.size));
+        this.climbEdge=nearLeft?Math.max(this.world.x0,L.x0):Math.min(this.world.x1-this.size,L.x1-this.size);
+        this._climbStopY=L.y-this.size; this.target=this.climbEdge; this.setState('walk',1e9); this._wantClimb=true; break; }
       case 'peek': this.peek(); break;
       case 'look': { const dir=(this.cursor&&isFinite(this.cursor.x))?sign(this.cursor.x-(this.pos.x+this.size/2)):0; this.hooks.event&&this.hooks.event('look',{dir}); this.setState('idle',rnd(900,1600)); break; }
       case 'say': this.hooks.event&&this.hooks.event('say',{kind:Math.random()<.4?'study':'idle'}); this.setState('idle',1600); break;
@@ -87,7 +92,9 @@ const Engine = {
     const x0=this.world.x0,x1=this.world.x1;
     const climbing=this._wantClimb&&Math.abs(this.pos.x-(this.climbEdge==null?-1e9:this.climbEdge))<2;
     if(climbing){ if(this.state!=='climb') this.setState('climb',1e9); this.pos.y-=spd*1.3*dt; this.facing=this.climbEdge===x0?1:-1;
-      if(this.pos.y<this.world.y0+rnd(10,60)){ this._wantClimb=false; this.onFloor=false; this.vel.y=0; this.setState('fall',1e9); } return; }
+      if(this._climbStopY!=null && this.pos.y<=this._climbStopY){ // reached the window top -> perch
+        this.pos.y=this._climbStopY; this._wantClimb=false; this._climbStopY=null; this.onFloor=true; this.vel.y=0; this.setState('idle',rnd(800,1800)); return; }
+      if(this.pos.y<this.world.y0+rnd(10,60)){ this._wantClimb=false; this._climbStopY=null; this.onFloor=false; this.vel.y=0; this.setState('fall',1e9); } return; }
     if(this.state==='walk'&&this.target!=null&&this.onFloor){ const d=this.target-this.pos.x, hp=(this.settings.speed||1);
       if(Math.abs(d)<this.size*0.35){ this.pos.x=this.target; this.target=null;
         if(this._peeking){ this._peeking=false; this.hooks.event&&this.hooks.event('look'); this.setState('idle',rnd(900,1800)); }

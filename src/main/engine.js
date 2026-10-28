@@ -102,6 +102,13 @@ const Engine = {
   tick(now){ const dt=Math.min(0.05,(now-this.lastTick)/1000); this.lastTick=now; this._now=now;
     if(!this.dragging) this.step(dt,now);
     if(!this.dragging&&this.state!=='sleep'&&this.state!=='drag'&&this.state!=='climb'&&now-this.lastChange>7000){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
+    // never let a non-finite position escape the tick (belt-and-braces; e.g. a
+    // stray NaN from the floating/cursor-avoid math would crash the window move)
+    if(!isFinite(this.pos.x)||!isFinite(this.pos.y)){
+      const cx=(this.world.x0+this.world.x1)/2, cy=(this.world.y0+this.world.y1)/2;
+      this.pos.x=isFinite(cx)?cx:300; this.pos.y=isFinite(cy)?cy:300;
+      this.vel.x=0; this.vel.y=0; this._wrapping=false; this.target=null;
+    }
   },
   step(dt,now){ if(this.moveType==='float'){ return this.stepFloat(dt,now); }
     const spd=this.baseSpeed*(this.settings.speed||1)*(this.settings.personality==='hyper'?1.5:this.settings.personality==='sleepy'?.6:1);

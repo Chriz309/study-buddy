@@ -113,15 +113,20 @@ function startEngine() {
   }, 1000 / 60);
 }
 function positionPetWindow() {
-  const { Wd, Ht, localX, localY } = petBox(engine.size);
-  const x = Math.round(engine.pos.x - localX), y = Math.round(engine.pos.y - localY);
-  // guard against any non-finite value (e.g. a transient during a DPI change) —
-  // passing NaN to setBounds/setPosition throws in the main process.
-  if (![x, y, Wd, Ht].every(Number.isFinite)) return;
-  const b = petWin.getBounds();
-  petWin._localX = localX; petWin._localY = localY;
-  if (b.width !== Wd || b.height !== Ht) petWin.setBounds({ x, y, width: Wd, height: Ht });
-  else if (b.x !== x || b.y !== y) petWin.setPosition(x, y);
+  try {
+    if (!petWin || petWin.isDestroyed()) return;
+    const { Wd, Ht, localX, localY } = petBox(engine.size);
+    let x = Math.round(engine.pos.x - localX), y = Math.round(engine.pos.y - localY);
+    if (![x, y, Wd, Ht].every(Number.isFinite)) return;
+    // clamp to a sane integer range so an out-of-range value can never trip the
+    // native setBounds/setPosition ("conversion failure") and crash main.
+    x = Math.max(-32000, Math.min(32000, x)); y = Math.max(-32000, Math.min(32000, y));
+    const w = Math.max(1, Math.min(32000, Wd)), h = Math.max(1, Math.min(32000, Ht));
+    const b = petWin.getBounds();
+    petWin._localX = localX; petWin._localY = localY;
+    if (b.width !== w || b.height !== h) petWin.setBounds({ x, y, width: w, height: h });
+    else if (b.x !== x || b.y !== y) petWin.setPosition(x, y);
+  } catch (e) { /* transient bad value — skip this frame rather than crash */ }
 }
 function sendPet() {
   petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, size: engine.size, state: engine.state, facing: engine.facing });

@@ -206,12 +206,18 @@
       const u = state.update, st = $('#updateStatus');
       const map = { idle:'', checking:'Checking…', current:'You’re up to date.',
         available:'Downloading update ' + (u.info && u.info.version || '') + '…',
-        downloaded:'Update ready — restart to apply.', error:'Could not check right now.' };
+        downloaded:'Update ' + (u.info && u.info.version || '') + ' downloaded — ready to install.',
+        error:'Could not check right now.' };
       st.textContent = map[u.status] || '';
+      const inst = $('#installUpdate'), chk = $('#checkUpdate');
+      const ready = u.status === 'downloaded';
+      if (inst) inst.style.display = ready ? '' : 'none';
+      if (chk) chk.style.display = ready ? 'none' : '';
     }
   }
   wireCrank();
   $('#checkUpdate').addEventListener('click', () => { window.buddy.checkUpdate(); $('#updateStatus').textContent = 'Checking…'; });
+  $('#installUpdate').addEventListener('click', () => { $('#updateStatus').textContent = 'Restarting to update…'; window.buddy.installUpdate(); });
   $('#mail').addEventListener('dblclick', () => window.buddy.openEmail());
   { const wa = $('#wa'); if (wa) wa.addEventListener('dblclick', () => window.buddy.openWhatsApp()); }
 

@@ -127,6 +127,8 @@ select{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
 .updates button{all:unset;cursor:pointer;padding:9px 18px;border-radius:10px;background:var(--panel2);
   border:1px solid var(--line);font-size:13px;font-weight:800}
 .updates button:hover{border-color:var(--accent2)}
+.updates button.primary{background:var(--accent);color:#1a1405;border-color:transparent}
+.updates button.primary:hover{filter:brightness(1.07);border-color:transparent}
 #updateStatus{font-size:12px;color:var(--dim);font-weight:700;min-height:16px}
 .fineprint{font-size:11px;color:var(--dim);margin-top:8px}
 
@@ -196,6 +198,7 @@ select{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
           <span class="mail" id="wa">WhatsApp: 072 963 3580</span></p>
         <div class="updates">
           <button id="checkUpdate">Check for updates</button>
+          <button id="installUpdate" class="primary" style="display:none">Restart &amp; update now</button>
           <span id="updateStatus"></span>
         </div>
         <p class="fineprint">Earned Sparks, unlocks and settings are saved locally on this computer.</p>

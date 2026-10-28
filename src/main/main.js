@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, shell, dialog } = require('electron');
 const path = require('path');
 const { execFile } = require('child_process');
 const store = require('./store');
@@ -221,18 +221,54 @@ function setStartOnBoot(enabled) {
 }
 
 // --- auto update ---------------------------------------------------------
+let _updater = null;          // the electron-updater instance (once initialised)
+let _installing = false;      // guard so we only trigger the install once
+let _promptOpen = false;      // guard so we only show the restart dialog once
+
+// Quit everything and let NSIS swap in the new version, then relaunch.
+function installUpdateNow() {
+  if (_installing || !_updater) return;
+  _installing = true;
+  app.isQuiting = true;
+  try { store.save(); } catch {}
+  try { destroyOverlays(); } catch {}
+  try { if (settingsWin && !settingsWin.isDestroyed()) settingsWin.destroy(); } catch {}
+  // isSilent = true (no installer wizard), isForceRunAfter = true (reopen after).
+  setTimeout(() => { try { _updater.quitAndInstall(true, true); } catch { app.quit(); } }, 150);
+}
+
+// Ask the user, up front, whether to restart & update now. No hunting in menus.
+function promptRestart(version) {
+  if (_promptOpen || _installing) return;
+  _promptOpen = true;
+  const parent = (settingsWin && !settingsWin.isDestroyed()) ? settingsWin : undefined;
+  dialog.showMessageBox(parent, {
+    type: 'info', buttons: ['Restart & update now', 'Later'], defaultId: 0, cancelId: 1,
+    title: 'Study Buddy update ready',
+    message: `Study Buddy ${version || ''} is ready to install`.trim(),
+    detail: 'It only takes a moment — the app will restart itself. You can also do this later from the About tab.',
+    noLink: true,
+  }).then(r => { _promptOpen = false; if (r.response === 0) installUpdateNow(); })
+    .catch(() => { _promptOpen = false; });
+}
+
 function initUpdates() {
   if (isDev) return; let autoUpdater;
   try { autoUpdater = require('electron-updater').autoUpdater; } catch { return; }
+  _updater = autoUpdater;
   autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;   // also install if the app is simply quit
   autoUpdater.on('checking-for-update', () => { update = { status: 'checking', info: null }; pushState(); });
   autoUpdater.on('update-available', (i) => { update = { status: 'available', info: { version: i.version } }; pushState(); });
   autoUpdater.on('update-not-available', () => { update = { status: 'current', info: null }; pushState(); });
   autoUpdater.on('error', (e) => { update = { status: 'error', info: { message: String(e && e.message || e) } }; pushState(); });
-  autoUpdater.on('update-downloaded', (i) => { update = { status: 'downloaded', info: { version: i.version } }; pushState();
-    if (tray) tray.displayBalloon && tray.displayBalloon({ title: 'Study Buddy', content: `Update ${i.version} ready — restart to apply.` }); });
+  autoUpdater.on('update-downloaded', (i) => {
+    update = { status: 'downloaded', info: { version: i && i.version } }; pushState();
+    if (tray && tray.displayBalloon) tray.displayBalloon({ title: 'Study Buddy', content: `Update ${i && i.version || ''} downloaded — restarting to apply.` });
+    promptRestart(i && i.version);            // prompt immediately, no need to open settings
+  });
   ipcMain.handle('update:check', () => { try { autoUpdater.checkForUpdates(); } catch {} return true; });
-  ipcMain.handle('update:install', () => { try { autoUpdater.quitAndInstall(); } catch {} return true; });
+  ipcMain.handle('update:install', () => { installUpdateNow(); return true; });
   setTimeout(() => { try { autoUpdater.checkForUpdatesAndNotify(); } catch {} }, 4000);
 }
 

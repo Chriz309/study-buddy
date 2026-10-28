@@ -43,6 +43,8 @@ const DEFAULTS = {
   active: 'blob',
   owned: ['blob'],             // start with just Blob; everyone else lives in the gumball machine
   levels: {},
+  names: {},                   // per-character custom names { blob: 'Gloop' }
+  colors: {},                  // per-character hue-rotate degrees { blob: 120 }
   cosmetics: {},               // per-character unlocked cosmetics (future)
   codes: [],                   // redeemed easter-egg codes (future)
   settings: {

@@ -101,6 +101,9 @@ function startEngine() {
 function positionPetWindow() {
   const { Wd, Ht, localX, localY } = petBox(engine.size);
   const x = Math.round(engine.pos.x - localX), y = Math.round(engine.pos.y - localY);
+  // guard against any non-finite value (e.g. a transient during a DPI change) —
+  // passing NaN to setBounds/setPosition throws in the main process.
+  if (![x, y, Wd, Ht].every(Number.isFinite)) return;
   const b = petWin.getBounds();
   petWin._localX = localX; petWin._localY = localY;
   if (b.width !== Wd || b.height !== Ht) petWin.setBounds({ x, y, width: Wd, height: Ht });
@@ -329,6 +332,16 @@ ipcMain.handle('buddy:roll', () => {
   return { ok: true, got: got.id, name: got.name, rarity: got.rarity, emoji: got.id, remaining: left, sparks: store.get().sparks };
 });
 ipcMain.handle('buddy:setActive', (_e, id) => { const s = store.get(); if (s.owned.includes(id)) { store.set({ active: id }); syncActiveChar(); pushState(); } return fullState(); });
+ipcMain.handle('buddy:rename', (_e, id, name) => {
+  const s = store.get(); if (!s.owned.includes(id)) return fullState();
+  const clean = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 18);
+  store.set({ names: { ...s.names, [id]: clean } }); pushState(); return fullState();
+});
+ipcMain.handle('buddy:setColor', (_e, id, hue) => {
+  const s = store.get(); if (!s.owned.includes(id)) return fullState();
+  const h = Math.max(0, Math.min(360, Math.round(Number(hue) || 0)));
+  store.set({ colors: { ...s.colors, [id]: h } }); pushState(); return fullState();
+});
 ipcMain.handle('buddy:earn', (_e, n) => { const s = store.get(); store.set({ sparks: +(s.sparks + Math.max(0, n || 0)).toFixed(3) }); return store.get().sparks; });
 function feedCost(level) { return 50 * (level + 1); }
 ipcMain.handle('buddy:feed', (_e, id) => {

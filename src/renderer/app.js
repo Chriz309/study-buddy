@@ -14,12 +14,17 @@
   let disp={x:0,y:0}, lastState='idle', dragging=false, speechTimer=0, zzzTimer=0, idleAcc=0, lastSize=0;
 
   function resizeCanvas(){ dpr=Math.max(1,window.devicePixelRatio||1); glc.width=Math.round(innerWidth*dpr); glc.height=Math.round(innerHeight*dpr); }
-  window.addEventListener('resize', resizeCanvas); resizeCanvas();
+  // crossing to a monitor with a different scale fires 'resize' AND changes dpr —
+  // re-apply the mesh + face sizing so body and face stay aligned.
+  window.addEventListener('resize', ()=>{ resizeCanvas(); if(ready) applySize(); });
+  resizeCanvas();
 
   jelly=new Jelly(glc,{grid:12,squish:1.1,stiffness:135,damp:5.3,coupling:0.3});
   face=new Face(faceSvg); face.setExpr('neutral');
+  let colorsMap={};
+  function applyColor(){ const h=(colorsMap&&colorsMap[curChar])||0; const f=h?('hue-rotate('+h+'deg)'):''; glc.style.filter=f; faceSvg.style.filter=f; }
   function loadChar(id){ const cfg=CHARS[id]||CHARS.blob;
-    const apply=(im)=>{ jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=!!cfg.swirl; floatMode=!!cfg.float; curChar=id; applySize(); ready=true; };
+    const apply=(im)=>{ jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=!!cfg.swirl; floatMode=!!cfg.float; curChar=id; applySize(); applyColor(); ready=true; };
     if(images[id]){ apply(images[id]); return; }
     const im=new Image(); im.onload=()=>{ images[id]=im; apply(im); };
     im.src=cfg.art||('art/'+(id==='ghost'?'ghost-body.png':'blob-body.png')); }
@@ -50,9 +55,9 @@
   function phaseFx(){ glc.style.transition=faceSvg.style.transition='opacity .45s ease'; glc.style.opacity=faceSvg.style.opacity='0.12'; setTimeout(()=>{ glc.style.opacity=faceSvg.style.opacity='1'; },650); }
 
   // ---- streams from main ----
-  window.buddy.onState((s)=>{ settings=s.settings||settings; if(settings){ jelly.squish=jiggle(); document.body.classList.toggle('rm',!!settings.reduceMotion); applySize(); }
-    if(s.active&&s.active!==curChar) loadChar(s.active); });
-  window.buddy.getState().then((s)=>{ settings=s.settings; if(settings){ jelly.squish=jiggle(); applySize(); } if(s.active&&s.active!==curChar) loadChar(s.active); });
+  window.buddy.onState((s)=>{ settings=s.settings||settings; colorsMap=s.colors||colorsMap; if(settings){ jelly.squish=jiggle(); document.body.classList.toggle('rm',!!settings.reduceMotion); applySize(); }
+    if(s.active&&s.active!==curChar) loadChar(s.active); else applyColor(); });
+  window.buddy.getState().then((s)=>{ settings=s.settings; colorsMap=s.colors||colorsMap; if(settings){ jelly.squish=jiggle(); applySize(); } if(s.active&&s.active!==curChar) loadChar(s.active); else applyColor(); });
 
   window.buddy.onPet((p)=>{
     const was=pet.show; pet=p;

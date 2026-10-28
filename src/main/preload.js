@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('buddy', {
   unlock:        (id) => ipcRenderer.invoke('buddy:unlock', id),
   roll:          () => ipcRenderer.invoke('buddy:roll'),
   setActive:     (id) => ipcRenderer.invoke('buddy:setActive', id),
+  rename:        (id, name) => ipcRenderer.invoke('buddy:rename', id, name),
+  setColor:      (id, hue) => ipcRenderer.invoke('buddy:setColor', id, hue),
   earn:          (n) => ipcRenderer.invoke('buddy:earn', n),
   feed:          (id) => ipcRenderer.invoke('buddy:feed', id),
 

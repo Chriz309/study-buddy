@@ -6,7 +6,12 @@
   const EMOJI = { blob:'🫧', ghost:'👻', cat:'🐱', chirp:'🐤', quack:'🦆', finn:'🐬', axo:'🦎',
                   jelly:'🎐', fox:'🦊', octo:'🐙', cog:'⚙️', ember:'🐲', zrk:'👽' };
   const feedCost = (lvl) => 50 * (lvl + 1);
+  // colour presets = hue-rotate degrees applied to the sprite; swatch previews the real tint
+  const PALETTE = [0, 45, 90, 140, 190, 250, 300];
+  const SWBASE = '#2fa8ff';
   let state = null;
+  const displayName = (c) => (state.names && state.names[c.id]) || c.name;
+  const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
   // ---- tabs ----
   document.querySelectorAll('#tabs button').forEach(b => {
@@ -108,7 +113,7 @@
       const pre = owned ? (EMOJI[c.id] || '⭐') : '❔';
       card.innerHTML = `
         <div class="pre">${pre}</div>
-        <h3>${owned ? c.name : (c.implemented ? '???' : c.name)} ${badge}</h3>
+        <h3>${owned ? esc(displayName(c)) : (c.implemented ? '???' : c.name)} ${badge}</h3>
         <div class="chips">
           <span class="chip" style="color:${rar.color};background:${rar.color}22">${rar.label}</span>
           <span class="chip">${moveLabel}</span>
@@ -130,11 +135,15 @@
       const afford = state.sparks >= cost;
       const card = document.createElement('div');
       card.className = 'card' + (state.active === c.id ? ' active-c' : '');
+      const curHue = (state.colors && state.colors[c.id]) || 0;
+      const swatches = PALETTE.map(h =>
+        `<button class="sw${h === curHue ? ' on' : ''}" style="background:${SWBASE};filter:hue-rotate(${h}deg)" title="${h === 0 ? 'Original' : 'Tint'}" data-col="${c.id}" data-hue="${h}"></button>`).join('');
       card.innerHTML = `
         <div class="pre">${EMOJI[c.id] || '⭐'}</div>
-        <h3>${c.name}</h3>
+        <input class="nameedit" data-name="${c.id}" value="${esc(displayName(c))}" maxlength="18" spellcheck="false" />
         <div class="lvl">Level ${lvl} · +${(0.1 * lvl).toFixed(1)}⚡/s bonus</div>
-        <p class="blurb">Feeding raises its level and your earn rate.</p>
+        <div class="swlabel">Colour</div>
+        <div class="swatches">${swatches}</div>
         <div class="foot">
           <button class="act" data-feed="${c.id}" ${afford?'':'disabled'}>Feed · <span class="cost">${cost}⚡</span></button>
         </div>`;
@@ -144,6 +153,12 @@
       const r = await window.buddy.feed(b.dataset.feed);
       if (r && !r.ok && r.reason === 'poor') flash(b, 'Not enough ⚡');
     }));
+    grid.querySelectorAll('.nameedit').forEach(inp => {
+      const commit = () => window.buddy.rename(inp.dataset.name, inp.value);
+      inp.addEventListener('change', commit);
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
+    });
+    grid.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => window.buddy.setColor(b.dataset.col, +b.dataset.hue)));
   }
 
   function flash(btn, msg) {
@@ -216,7 +231,7 @@
       if (inst) inst.style.display = ready ? '' : 'none';
       if (chk) chk.style.display = ready ? 'none' : '';
     }
-    const hb = $('#ctlHide'); if (hb) { hb.textContent = state.buddyHidden ? '👋' : '🙈'; hb.title = state.buddyHidden ? 'Show buddy' : 'Hide buddy'; }
+    const hb = $('#ctlHide'); if (hb) { hb.textContent = state.buddyHidden ? '👋 Show' : '🙈 Hide'; hb.title = state.buddyHidden ? 'Show buddy' : 'Hide buddy'; }
   }
   wireCrank();
   $('#checkUpdate').addEventListener('click', () => { window.buddy.checkUpdate(); $('#updateStatus').textContent = 'Checking…'; });

@@ -152,7 +152,8 @@
   }
 
   // ---- behaviour ----
-  const SIZES = [{v:80,l:'S'},{v:120,l:'M'},{v:170,l:'L'},{v:220,l:'XL'}];
+  const SIZES = [{v:34,l:'Tiny'},{v:50,l:'XS'},{v:72,l:'S'},{v:110,l:'M'},{v:160,l:'L'},{v:220,l:'XL'}];
+  function sizeOpts(cur){ const o = SIZES.map(x => [x.v, x.l]); if (!SIZES.some(x => x.v === cur)) o.unshift([cur, cur + 'px']); return o; }
   function paintBehaviour() {
     const s = state.settings;
     const rows = $('#behaviourRows');
@@ -161,7 +162,8 @@
           state.personalities.map(p => [p, cap(p)]), s.personality)}
       ${rowRange('Mischief', 'Higher = more cheeky antics (climbing, peeking, jumping).', 'mischief', 0, 100, 5, s.mischief, '%')}
       ${rowRange('Speed', 'How fast it moves around.', 'speed', 0.4, 2, 0.1, s.speed, '×')}
-      ${rowSelect('Size', 'How big it appears on screen.', 'size', SIZES.map(x => [x.v, x.l]), s.size)}
+      ${rowSelect('Size', 'How big it appears on screen.', 'size', sizeOpts(s.size), s.size)}
+      ${rowToggle('Stay in one spot', 'Naughty corner: stops roaming — just idle animations, little hops and reactions where it stands.', 'stayPut', s.stayPut)}
       ${rowToggle('Speech bubbles', 'Let it say things now and then.', 'speech', s.speech)}
       ${rowRange('Chattiness', 'How often it speaks up (floaty pets talk less).', 'chatter', 0, 1, 0.1, (s.chatter==null?0.6:s.chatter), '')}
       ${rowToggle('Reduce motion', 'Calmer, minimal animation.', 'reduceMotion', s.reduceMotion)}
@@ -214,10 +216,14 @@
       if (inst) inst.style.display = ready ? '' : 'none';
       if (chk) chk.style.display = ready ? 'none' : '';
     }
+    const hb = $('#ctlHide'); if (hb) hb.textContent = state.buddyHidden ? '👋 Show buddy' : '🙈 Hide buddy';
   }
   wireCrank();
   $('#checkUpdate').addEventListener('click', () => { window.buddy.checkUpdate(); $('#updateStatus').textContent = 'Checking…'; });
   $('#installUpdate').addEventListener('click', () => { $('#updateStatus').textContent = 'Restarting to update…'; window.buddy.installUpdate(); });
+  $('#ctlDrive').addEventListener('click', () => window.buddy.openDrive());
+  $('#ctlQuit').addEventListener('click', () => window.buddy.quit());
+  $('#ctlHide').addEventListener('click', () => { if (state && state.buddyHidden) window.buddy.showBuddy(); else window.buddy.hideBuddy(); });
   $('#mail').addEventListener('dblclick', () => window.buddy.openEmail());
   { const wa = $('#wa'); if (wa) wa.addEventListener('dblclick', () => window.buddy.openWhatsApp()); }
 

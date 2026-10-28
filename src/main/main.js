@@ -111,7 +111,7 @@ function updateInteractive(cur) {
 }
 function syncEngineSettings() {
   const s = store.get().settings;
-  engine.setSettings({ speed: s.speed, personality: s.personality, mischief: s.mischief });
+  engine.setSettings({ speed: s.speed, personality: s.personality, mischief: s.mischief, stayPut: !!s.stayPut });
   engine.setSize(s.size || 140);
 }
 function syncActiveChar() { const c = characterById(store.get().active); engine.setMoveType(c && c.move ? c.move : 'walk'); }
@@ -126,6 +126,7 @@ let fsDisplays = new Set();   // display ids currently covered by a fullscreen a
 function pollForeground() {
   try {
     if (process.platform !== 'win32') { engine.setLedge(null); if (fsDisplays.size) { fsDisplays = new Set(); applyVisibility(); } return; }
+    if (userHidden) { engine.setLedge(null); return; }   // nothing on screen — don't spawn the probe
     if (fgBusy) return;
     const aware = store.get().settings.windowAware;
     fgBusy = true;
@@ -176,7 +177,7 @@ function fullState() {
   const s = store.get();
   const pool = CHARACTERS.filter(c => c.implemented && !s.owned.includes(c.id)).map(c => c.id);
   return { ...s, catalog: CHARACTERS, currency: CURRENCY, rarities: RARITIES, personalities: PERSONALITIES,
-    rate: sparkRate(), gumballCost: GUMBALL_COST, gumballPool: pool,
+    rate: sparkRate(), gumballCost: gumballCost(), gumballPool: pool, buddyHidden: userHidden,
     update, platform: process.platform, appVersion: app.getVersion() };
 }
 function pushState() {
@@ -300,14 +301,22 @@ ipcMain.handle('buddy:unlock', (_e, id) => {
   if (s.sparks < c.cost) return { ok: false, reason: 'poor' };
   store.set({ sparks: +(s.sparks - c.cost).toFixed(3), owned: [...s.owned, id], active: id }); pushState(); return { ok: true };
 });
+// Each buddy you already own makes the next crank 1.6x pricier (rounded to 1k).
+function gumballCost() {
+  const s = store.get();
+  const ownedImpl = CHARACTERS.filter(c => c.implemented && s.owned.includes(c.id)).length;
+  const raw = GUMBALL_COST * Math.pow(1.6, Math.max(0, ownedImpl - 1));
+  return Math.round(raw / 1000) * 1000;
+}
 // Gumball machine: spend Sparks for a random buddy you don't own yet.
 ipcMain.handle('buddy:roll', () => {
   const s = store.get();
   const pool = CHARACTERS.filter(c => c.implemented && !s.owned.includes(c.id));
   if (pool.length === 0) return { ok: false, reason: 'complete' };          // owns everything available
-  if (s.sparks < GUMBALL_COST) return { ok: false, reason: 'poor', cost: GUMBALL_COST };
+  const cost = gumballCost();
+  if (s.sparks < cost) return { ok: false, reason: 'poor', cost };
   const got = pool[Math.floor(Math.random() * pool.length)];
-  store.set({ sparks: +(s.sparks - GUMBALL_COST).toFixed(3), owned: [...s.owned, got.id], active: got.id });
+  store.set({ sparks: +(s.sparks - cost).toFixed(3), owned: [...s.owned, got.id], active: got.id });
   syncActiveChar(); pushState();
   const left = CHARACTERS.filter(c => c.implemented && !store.get().owned.includes(c.id)).length;
   return { ok: true, got: got.id, name: got.name, rarity: got.rarity, emoji: got.id, remaining: left, sparks: store.get().sparks };
@@ -333,8 +342,8 @@ ipcMain.on('pet:tap', () => engine.petted());
 
 ipcMain.on('app:openSettings', () => openSettings());
 ipcMain.on('app:toggle', (_e, key) => toggle(key));
-ipcMain.on('app:hideBuddy', () => { hideAllOverlays(); refreshTrayMenu(); });
-ipcMain.on('app:showBuddy', () => { showAllOverlays(); refreshTrayMenu(); });
+ipcMain.on('app:hideBuddy', () => { hideAllOverlays(); refreshTrayMenu(); pushState(); });
+ipcMain.on('app:showBuddy', () => { showAllOverlays(); refreshTrayMenu(); pushState(); });
 ipcMain.on('app:openEmail', () => shell.openExternal('mailto:christopherblairhook@gmail.com'));
 ipcMain.on('app:openDrive', () => shell.openExternal(DRIVE_URL));
 ipcMain.on('app:openWhatsApp', () => shell.openExternal('https://wa.me/27729633580'));
@@ -354,7 +363,7 @@ app.on('ready', () => {
   screen.on('display-added', relayout);
   screen.on('display-removed', relayout);
   screen.on('display-metrics-changed', relayout);
-  setInterval(pollForeground, 800);   // window-awareness poll (Windows)
+  setInterval(pollForeground, 1500);  // window-awareness / fullscreen poll (Windows) — gentler on CPU
 });
 app.on('window-all-closed', () => { /* keep running in tray */ });
 app.on('before-quit', () => { app.isQuiting = true; store.save(); });

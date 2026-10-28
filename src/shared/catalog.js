@@ -46,7 +46,7 @@ const DEFAULTS = {
   cosmetics: {},               // per-character unlocked cosmetics (future)
   codes: [],                   // redeemed easter-egg codes (future)
   settings: {
-    size: 85,                  // small by default
+    size: 50,                  // XS by default (now goes much smaller)
     speed: 1.0,
     personality: 'chill',
     mischief: 25,
@@ -55,6 +55,7 @@ const DEFAULTS = {
     chatter: 0.6,              // 0..1 how talkative (ghost gets scaled down)
     startOnBoot: false,
     paused: false,
+    stayPut: false,            // "naughty corner": stay in place, idle animations only
     reduceMotion: false,
     roamMonitors: true,        // cross to other monitors
     windowAware: true,         // perch on the active window's top edge (Windows)

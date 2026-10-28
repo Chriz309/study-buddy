@@ -11,52 +11,56 @@ const INDEX = path.join(__dirname, '..', 'renderer', 'index.html');
 const isDev = !app.isPackaged;
 const DRIVE_URL = 'https://drive.google.com/drive/folders/1vPoKKqMPH1ZbTRkgT_10apMRS_mb3W7c';
 
-let overlays = new Map();   // displayId -> BrowserWindow (one transparent layer per monitor)
+let petWin = null;          // ONE small sprite-sized window that moves (not a full-screen overlay)
 let settingsWin = null;
 let tray = null;
-let ownerId = null;         // which display currently shows the pet
+let grabOff = null;         // {dx,dy} cursor offset while dragging
 let update = { status: 'idle', info: null };
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
-app.on('second-instance', () => { showAllOverlays(); openSettings(); });
+app.on('second-instance', () => { showBuddy(); openSettings(); });
 
-// --- per-display overlays -----------------------------------------------
-function createOverlays() {
-  destroyOverlays();
-  for (const d of screen.getAllDisplays()) {
-    const b = d.bounds;
-    const w = new BrowserWindow({
-      x: b.x, y: b.y, width: b.width, height: b.height,
-      transparent: true, frame: false, resizable: false, movable: false,
-      skipTaskbar: true, focusable: false, hasShadow: false, show: false, fullscreenable: false,
-      type: process.platform === 'win32' ? undefined : 'panel',
-      webPreferences: { preload: path.join(__dirname, 'preload.js'), backgroundThrottling: false },
-    });
-    w._displayId = d.id; w._bounds = b; w._interactive = false;
-    w.setAlwaysOnTop(true, 'screen-saver');
-    w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    w.setIgnoreMouseEvents(true, { forward: true });
-    w.loadFile(INDEX);
-    w.once('ready-to-show', () => { applyVisibility(); w.webContents.send('state', fullState()); });
-    w.on('closed', () => { overlays.delete(d.id); });
-    overlays.set(d.id, w);
-  }
-  engine.setWorld(screen.getAllDisplays());
-  syncEngineSettings();
+// --- single moving pet window -------------------------------------------
+let userHidden = false;   // user hid the buddy via the tray/GUI
+
+// Window box around the sprite: room above for the parachute, speech bubble and
+// food-drop; sprite sits near the bottom-centre. All in DIP.
+function petBox(M) {
+  const Wd = Math.max(Math.round(M * 1.6), 240);
+  const Ht = Math.max(Math.round(M * 2.45), 210);
+  const localX = Math.round((Wd - M) / 2);
+  const localY = Ht - Math.round(M * 0.22) - M;   // sprite top within the window
+  return { Wd, Ht, localX, localY };
 }
-function destroyOverlays() { for (const w of overlays.values()) if (w && !w.isDestroyed()) w.destroy(); overlays.clear(); }
-let userHidden = false;   // user hid the buddy via the tray
+function createPetWindow() {
+  if (petWin && !petWin.isDestroyed()) return;
+  const { Wd, Ht } = petBox(engine.size);
+  petWin = new BrowserWindow({
+    width: Wd, height: Ht, x: 0, y: 0,
+    transparent: true, frame: false, resizable: false, movable: false,
+    skipTaskbar: true, focusable: false, hasShadow: false, show: false, fullscreenable: false,
+    type: process.platform === 'win32' ? undefined : 'panel',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), backgroundThrottling: false },
+  });
+  petWin._interactive = false; petWin._localX = 0; petWin._localY = 0;
+  petWin.setAlwaysOnTop(true, 'screen-saver');
+  petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+  petWin.setIgnoreMouseEvents(true, { forward: true });
+  petWin.loadFile(INDEX);
+  petWin.once('ready-to-show', () => { applyVisibility(); petWin.webContents.send('state', fullState()); });
+  petWin.on('closed', () => { petWin = null; });
+}
+// visible unless the user hid it, or a fullscreen app owns the display it's on
+function petShouldShow() { if (userHidden) return false; const d = ownerDisplay(); return !(d && fsDisplays.has(d.id)); }
 function applyVisibility() {
-  for (const [id, w] of overlays) { if (!w || w.isDestroyed()) continue;
-    const vis = !userHidden && !fsDisplays.has(id);
-    if (vis && !w.isVisible()) w.showInactive();
-    else if (!vis && w.isVisible()) w.hide();
-  }
+  if (!petWin || petWin.isDestroyed()) return;
+  const vis = petShouldShow();
+  if (vis && !petWin.isVisible()) petWin.showInactive();
+  else if (!vis && petWin.isVisible()) petWin.hide();
 }
-function showAllOverlays() { userHidden = false; if (overlays.size === 0) createOverlays(); applyVisibility(); }
-function hideAllOverlays() { userHidden = true; applyVisibility(); }
-function overlaysVisible() { return !userHidden && overlays.size > 0; }
-function winOf(sender) { for (const w of overlays.values()) if (w && !w.isDestroyed() && w.webContents === sender) return w; return null; }
+function showBuddy() { userHidden = false; if (!petWin || petWin.isDestroyed()) createPetWindow(); applyVisibility(); }
+function hideBuddy() { userHidden = true; applyVisibility(); }
+function overlaysVisible() { return !userHidden; }
 
 function ownerDisplay() {
   const cx = engine.pos.x + engine.size / 2, cy = engine.pos.y + engine.size / 2;
@@ -73,8 +77,7 @@ function startEngine() {
     state: () => {},                       // state is sent every frame in the pet packet
     event: (type, data) => {
       if (type === 'pet') store.set({ sparks: +(store.get().sparks + 1).toFixed(3) });
-      const w = overlays.get(ownerId);
-      if (w && !w.isDestroyed()) w.webContents.send('petEvent', Object.assign({ type }, data || {}));
+      if (petWin && !petWin.isDestroyed()) petWin.webContents.send('petEvent', Object.assign({ type }, data || {}));
     },
   }, Date.now());
   engine.pos = { x: 0, y: 0 };
@@ -85,32 +88,33 @@ function startEngine() {
   syncEngineSettings(); syncActiveChar();
 
   setInterval(() => {
-    if (overlays.size === 0 || !overlaysVisible()) return;
+    if (!petWin || petWin.isDestroyed() || userHidden) return;
     const now = Date.now();
     const cur = screen.getCursorScreenPoint();
     engine.setCursor({ x: cur.x, y: cur.y });
+    if (grabOff && engine.dragging) engine.dragTo(cur.x - grabOff.dx + engine.size / 2, cur.y - grabOff.dy + engine.size / 2);
     engine.tick(now);
-    broadcastPet();
-    updateInteractive(cur);
+    applyVisibility();
+    if (petWin.isVisible()) { positionPetWindow(); sendPet(); setPetInteractive(cur); }
   }, 1000 / 60);
 }
-function broadcastPet() {
-  const d = ownerDisplay(); if (!d) return; ownerId = d.id; const b = d.bounds;
-  for (const [id, w] of overlays) { if (!w || w.isDestroyed()) continue;
-    if (id === d.id) w.webContents.send('pet', { show: true, x: engine.pos.x - b.x, y: engine.pos.y - b.y, size: engine.size, state: engine.state, facing: engine.facing });
-    else w.webContents.send('pet', { show: false });
-  }
+function positionPetWindow() {
+  const { Wd, Ht, localX, localY } = petBox(engine.size);
+  const x = Math.round(engine.pos.x - localX), y = Math.round(engine.pos.y - localY);
+  const b = petWin.getBounds();
+  petWin._localX = localX; petWin._localY = localY;
+  if (b.width !== Wd || b.height !== Ht) petWin.setBounds({ x, y, width: Wd, height: Ht });
+  else if (b.x !== x || b.y !== y) petWin.setPosition(x, y);
 }
-function updateInteractive(cur) {
-  const d = ownerDisplay();
-  // generous grab margin (scales up for tiny sprites); stay interactive while being dragged
+function sendPet() {
+  petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, size: engine.size, state: engine.state, facing: engine.facing });
+}
+function setPetInteractive(cur) {
+  if (!petWin || petWin.isDestroyed() || !petWin.isVisible()) return;
   const pad = Math.max(18, engine.size * 0.5);
-  const hit = !!d && (engine.dragging || engine.hitTest(cur.x, cur.y, pad));
-  for (const [id, w] of overlays) { if (!w || w.isDestroyed()) continue;
-    const want = hit && d && id === d.id && w.isVisible();
-    if (w._interactive !== want) { w._interactive = want;
-      if (want) w.setIgnoreMouseEvents(false); else w.setIgnoreMouseEvents(true, { forward: true }); }
-  }
+  const want = engine.dragging || engine.hitTest(cur.x, cur.y, pad);
+  if (petWin._interactive !== want) { petWin._interactive = want;
+    if (want) petWin.setIgnoreMouseEvents(false); else petWin.setIgnoreMouseEvents(true, { forward: true }); }
 }
 function syncEngineSettings() {
   const s = store.get().settings;
@@ -185,7 +189,7 @@ function fullState() {
 }
 function pushState() {
   const payload = fullState();
-  for (const w of [...overlays.values(), settingsWin]) if (w && !w.isDestroyed()) w.webContents.send('state', payload);
+  for (const w of [petWin, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send('state', payload);
 }
 
 // --- economy -------------------------------------------------------------
@@ -193,7 +197,7 @@ function sparkRate() { const s = store.get(); const lvl = (s.levels && s.levels[
 let lastTick = Date.now();
 setInterval(() => { const now = Date.now(); const dt = (now - lastTick) / 1000; lastTick = now;
   const s = store.get(); if (!s.settings.paused) store.set({ sparks: +(s.sparks + sparkRate() * dt).toFixed(3) }); }, 1000);
-setInterval(() => { const s = store.get(); for (const w of [...overlays.values(), settingsWin]) if (w && !w.isDestroyed()) w.webContents.send('sparks', s.sparks); }, 1000);
+setInterval(() => { const s = store.get(); for (const w of [petWin, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send('sparks', s.sparks); }, 1000);
 
 // --- tray ----------------------------------------------------------------
 function buildTray() {
@@ -209,7 +213,7 @@ function refreshTrayMenu() {
     { label: '📂  Open the Drive', click: () => shell.openExternal(DRIVE_URL) },
     { type: 'separator' },
     { label: s.settings.paused ? '▶  Resume idle points' : '⏸  Pause idle points', click: () => toggle('paused') },
-    { label: shown ? '🙈  Hide buddy' : '👋  Show buddy', click: () => { if (shown) hideAllOverlays(); else showAllOverlays(); refreshTrayMenu(); } },
+    { label: shown ? '🙈  Hide buddy' : '👋  Show buddy', click: () => { if (shown) hideBuddy(); else showBuddy(); refreshTrayMenu(); } },
     { label: 'Start on login', type: 'checkbox', checked: s.settings.startOnBoot, click: (mi) => setStartOnBoot(mi.checked) },
     { type: 'separator' },
     { label: 'About', click: () => openSettings() },
@@ -238,7 +242,7 @@ function installUpdateNow() {
   app.isQuiting = true;
   try { store.save(); } catch {}
   try { closeUpdatePopup(); } catch {}
-  try { destroyOverlays(); } catch {}
+  try { if (petWin && !petWin.isDestroyed()) petWin.destroy(); } catch {}
   try { if (settingsWin && !settingsWin.isDestroyed()) settingsWin.destroy(); } catch {}
   // isSilent = true (no installer wizard), isForceRunAfter = true (reopen after).
   setTimeout(() => { try { _updater.quitAndInstall(true, true); } catch { app.quit(); } }, 150);
@@ -333,20 +337,22 @@ ipcMain.handle('buddy:feed', (_e, id) => {
   if (s.sparks < cost) return { ok: false, reason: 'poor', cost };
   store.set({ sparks: +(s.sparks - cost).toFixed(3), levels: { ...s.levels, [id]: cur + 1 } }); pushState();
   // tell the pet to react happily
-  const w = overlays.get(ownerId); if (w && !w.isDestroyed()) w.webContents.send('petEvent', { type: 'fed' });
+  if (petWin && !petWin.isDestroyed()) petWin.webContents.send('petEvent', { type: 'fed' });
   return { ok: true, level: cur + 1, sparks: store.get().sparks, next: feedCost(cur + 1) };
 });
 
-// pet input from the owning overlay (coords are local to that window's display)
-ipcMain.on('pet:grab', () => engine.grab());
-ipcMain.on('pet:drag', (e, p) => { const w = winOf(e.sender); if (!w) return; const b = w._bounds; engine.dragTo(p.x + b.x, p.y + b.y); });
-ipcMain.on('pet:release', () => engine.release());
+// pet input from the pet window. Dragging is driven by the GLOBAL cursor in the
+// engine loop (the window moves with the pet, so local coords would feed back),
+// so we just record the grab offset here.
+ipcMain.on('pet:grab', () => { const c = screen.getCursorScreenPoint(); grabOff = { dx: c.x - engine.pos.x, dy: c.y - engine.pos.y }; engine.grab(); });
+ipcMain.on('pet:drag', () => {});                       // no-op: loop drives drag from the global cursor
+ipcMain.on('pet:release', () => { engine.release(); grabOff = null; });
 ipcMain.on('pet:tap', () => engine.petted());
 
 ipcMain.on('app:openSettings', () => openSettings());
 ipcMain.on('app:toggle', (_e, key) => toggle(key));
-ipcMain.on('app:hideBuddy', () => { hideAllOverlays(); refreshTrayMenu(); pushState(); });
-ipcMain.on('app:showBuddy', () => { showAllOverlays(); refreshTrayMenu(); pushState(); });
+ipcMain.on('app:hideBuddy', () => { hideBuddy(); refreshTrayMenu(); pushState(); });
+ipcMain.on('app:showBuddy', () => { showBuddy(); refreshTrayMenu(); pushState(); });
 ipcMain.on('app:openEmail', () => shell.openExternal('mailto:christopherblairhook@gmail.com'));
 ipcMain.on('app:openDrive', () => shell.openExternal(DRIVE_URL));
 ipcMain.on('app:openWhatsApp', () => shell.openExternal('https://wa.me/27729633580'));
@@ -354,13 +360,13 @@ ipcMain.on('app:quit', () => { app.isQuiting = true; app.quit(); });
 
 // --- lifecycle -----------------------------------------------------------
 let relayoutTimer = null;
-function relayout() { clearTimeout(relayoutTimer); relayoutTimer = setTimeout(() => { createOverlays(); }, 300); }
+function relayout() { clearTimeout(relayoutTimer); relayoutTimer = setTimeout(() => { engine.setWorld(screen.getAllDisplays()); }, 300); }
 
 app.on('ready', () => {
   store.load();
   try { app.setLoginItemSettings({ openAtLogin: store.get().settings.startOnBoot, args: ['--hidden'] }); } catch {}
   startEngine();
-  createOverlays();
+  createPetWindow();
   buildTray();
   initUpdates();
   screen.on('display-added', relayout);

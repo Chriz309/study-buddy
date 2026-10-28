@@ -224,7 +224,7 @@
   // ---- wire state ----
   function paintAll() {
     paintWallet(); paintShop(); paintCare(); paintBehaviour(); paintAbout();
-    $('#aboutVer').textContent = 'version ' + (state.appVersion || '—');
+    $('#aboutVer').textContent = 'current version ' + (state.appVersion || '—');
   }
   window.buddy.onSparks((n) => {
     if (!state) return; state.sparks = n; paintWallet();

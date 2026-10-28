@@ -126,5 +126,7 @@
   function endDrag(e){ if(dragId!==e.pointerId) return; try{glc.releasePointerCapture(e.pointerId);}catch{}
     if(dragging){ dragging=false; window.buddy.petRelease(); } else if(Date.now()-downAt<300){ window.buddy.petTap(); } dragId=null; }
   window.addEventListener('pointerup',endDrag); window.addEventListener('pointercancel',endDrag);
+  // safety: if the pointer is ever lost mid-drag (passthrough flips, focus loss), release
+  window.addEventListener('blur',()=>{ if(dragId!==null){ if(dragging){ dragging=false; window.buddy.petRelease(); } dragId=null; moved=false; } });
   window.addEventListener('dblclick',(e)=>{ if(overPet(e.clientX,e.clientY)) window.buddy.openSettings(); });
 })();

@@ -95,7 +95,7 @@ function startEngine() {
     if (grabOff && engine.dragging) engine.dragTo(cur.x - grabOff.dx + engine.size / 2, cur.y - grabOff.dy + engine.size / 2);
     engine.tick(now);
     applyVisibility();
-    if (petWin.isVisible()) { positionPetWindow(); sendPet(); setPetInteractive(cur); }
+    if (petWin.isVisible()) { positionPetWindow(); sendPet(); setPetInteractive(cur); keepOnTop(); }
   }, 1000 / 60);
 }
 function positionPetWindow() {
@@ -116,8 +116,21 @@ function setPetInteractive(cur) {
   if (!petWin || petWin.isDestroyed() || !petWin.isVisible()) return;
   const pad = Math.max(18, engine.size * 0.5);
   const want = engine.dragging || engine.hitTest(cur.x, cur.y, pad);
-  if (petWin._interactive !== want) { petWin._interactive = want;
-    if (want) petWin.setIgnoreMouseEvents(false); else petWin.setIgnoreMouseEvents(true, { forward: true }); }
+  // Re-assert periodically (every ~0.5s) even when unchanged: a setBounds / DPI
+  // change / focus event can silently drop the mouse-passthrough style, which is
+  // what left the pet "stuck, can't interact". This self-heals it within 0.5s.
+  petWin._iTick = (petWin._iTick || 0) + 1;
+  if (petWin._interactive !== want || petWin._iTick >= 30) {
+    petWin._interactive = want; petWin._iTick = 0;
+    if (want) petWin.setIgnoreMouseEvents(false); else petWin.setIgnoreMouseEvents(true, { forward: true });
+  }
+}
+// keep the pet above other windows; Windows can silently drop topmost
+function keepOnTop() {
+  petWin._topTick = (petWin._topTick || 0) + 1;
+  if (petWin._topTick >= 90) { petWin._topTick = 0;
+    try { petWin.setAlwaysOnTop(true, 'screen-saver'); if (petWin.moveTop) petWin.moveTop(); } catch {}
+  }
 }
 function syncEngineSettings() {
   const s = store.get().settings;

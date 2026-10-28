@@ -3,6 +3,7 @@
 // the renderer (src/renderer/characters.js), keyed by the same `id`.
 
 const CURRENCY = { name: 'Sparks', symbol: '⚡' }; // ⚡
+const GUMBALL_COST = 500;   // cost of one gumball-machine roll (random unowned buddy)
 
 // move:  'walk'  gravity, walks + climbs edges
 //        'float' drifts, ignores gravity (ghosts)
@@ -33,10 +34,10 @@ const PERSONALITIES = ['chill', 'hyper', 'sleepy', 'naughty'];
 const IMPLEMENTED_IDS = CHARACTERS.filter(c => c.implemented).map(c => c.id);
 
 const DEFAULTS = {
-  version: 2,
-  sparks: 800,                 // a little to play with feeding
+  version: 3,
+  sparks: 800,                 // a little to play with — enough for a first gumball crank
   active: 'blob',
-  owned: IMPLEMENTED_IDS.slice(),   // TEST_UNLOCK_ALL
+  owned: ['blob'],             // start with just Blob; everyone else lives in the gumball machine
   levels: {},
   cosmetics: {},               // per-character unlocked cosmetics (future)
   codes: [],                   // redeemed easter-egg codes (future)
@@ -59,4 +60,4 @@ const DEFAULTS = {
 
 function characterById(id) { return CHARACTERS.find(c => c.id === id); }
 
-module.exports = { CURRENCY, CHARACTERS, RARITIES, PERSONALITIES, DEFAULTS, characterById, IMPLEMENTED_IDS };
+module.exports = { CURRENCY, GUMBALL_COST, CHARACTERS, RARITIES, PERSONALITIES, DEFAULTS, characterById, IMPLEMENTED_IDS };

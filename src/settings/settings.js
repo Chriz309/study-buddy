@@ -3,7 +3,7 @@
    this view and the overlay stay in sync. */
 (function () {
   const $ = (s) => document.querySelector(s);
-  const EMOJI = { blob:'🫧', pib:'🐱', chirp:'🐤', boo:'👻', quack:'🦆', finn:'🐬', axo:'🦎',
+  const EMOJI = { blob:'🫧', ghost:'👻', cat:'🐱', chirp:'🐤', quack:'🦆', finn:'🐬', axo:'🦎',
                   jelly:'🎐', fox:'🦊', octo:'🐙', cog:'⚙️', ember:'🐲', zrk:'👽' };
   const feedCost = (lvl) => 50 * (lvl + 1);
   let state = null;
@@ -25,40 +25,98 @@
     $('#rate').textContent = '+' + (state.rate || 1).toFixed(1) + ' / sec';
   }
 
-  // ---- shop ----
+  // ---- gumball machine (gacha) ----
+  const BALL_COLORS = ['#ff7a90','#ffd23f','#53d6ff','#54e0a0','#c08bff','#ff9f4f','#7ad1ff'];
+  function buildDome() {
+    const dome = $('#gmDome'); if (!dome || dome._built) return; dome._built = true;
+    // a little pile of gumballs in the lower half of the dome
+    const spots = [[18,70],[44,78],[70,74],[32,54],[58,56],[84,64],[46,40],[72,42],[24,88],[60,86],[86,84],[8,86]];
+    spots.forEach((p, i) => {
+      const b = document.createElement('span'); b.className = 'ball';
+      b.style.left = p[0] + 'px'; b.style.top = p[1] + 'px';
+      b.style.background = `radial-gradient(circle at 35% 30%, #fff8, ${BALL_COLORS[i % BALL_COLORS.length]} 60%)`;
+      dome.appendChild(b);
+    });
+  }
+  function paintGumball() {
+    buildDome();
+    const cost = state.gumballCost || 500;
+    const pool = state.gumballPool || [];
+    $('#gmCost').textContent = cost + '⚡';
+    const crank = $('#gmCrank'), desc = $('#gmDesc'), res = $('#gmResult');
+    if (pool.length === 0) {
+      crank.disabled = true;
+      desc.textContent = 'You’ve adopted every friend available right now — more are on the way! 🎉';
+      if (!res.querySelector('.gm-reveal')) { res.textContent = 'Collection complete'; res.classList.add('none'); }
+    } else {
+      crank.disabled = state.sparks < cost;
+      desc.textContent = `Crank the handle to adopt a random new buddy you don’t own yet — ${pool.length} still hiding inside.`;
+    }
+  }
+  let rolling = false;
+  function setResult(msg, muted) { const r = $('#gmResult'); r.textContent = msg; r.classList.toggle('none', !!muted); }
+  function reveal(r) {
+    const em = EMOJI[r.got] || '⭐';
+    $('#gmResult').classList.remove('none');
+    $('#gmResult').innerHTML = `<span class="gm-reveal"><span class="em">${em}</span> You adopted <b>${r.name}</b>! It’s now your active buddy.</span>`;
+  }
+  function wireCrank() {
+    const crank = $('#gmCrank'); if (!crank || crank._wired) return; crank._wired = true;
+    crank.addEventListener('click', async () => {
+      if (rolling || crank.disabled) return;
+      const pool = state.gumballPool || [];
+      if (pool.length === 0) return;
+      if (state.sparks < (state.gumballCost || 500)) { setResult('Not enough ⚡ — keep studying!', true); return; }
+      rolling = true; $('#gumball').classList.add('spin'); setResult('…', true);
+      let r; try { r = await window.buddy.roll(); } catch { r = null; }
+      setTimeout(() => {
+        $('#gumball').classList.remove('spin'); rolling = false;
+        if (r && r.ok) reveal(r);
+        else if (r && r.reason === 'complete') setResult('You’ve collected them all! 🎉', true);
+        else if (r && r.reason === 'poor') setResult('Not enough ⚡', true);
+        else setResult('Something went wrong — try again.', true);
+      }, 750);
+    });
+  }
+
+  // ---- collection ----
   function paintShop() {
+    paintGumball();
     const grid = $('#shopGrid'); grid.innerHTML = '';
-    for (const c of state.catalog) {
+    // owned first, then hidden (implemented but not yet rolled), then future "soon"
+    const order = [...state.catalog].sort((a, b) => {
+      const rank = (c) => state.owned.includes(c.id) ? 0 : c.implemented ? 1 : 2;
+      return rank(a) - rank(b);
+    });
+    for (const c of order) {
       const owned = state.owned.includes(c.id);
       const active = state.active === c.id;
-      const afford = state.sparks >= c.cost;
       const card = document.createElement('div');
       card.className = 'card' + (active ? ' active-c' : '') + (owned ? '' : ' locked');
       const badge = active ? '<span class="badge on">Active</span>'
                    : owned ? '<span class="badge on">Owned</span>'
-                   : !c.implemented ? '<span class="badge">Soon</span>' : '';
+                   : !c.implemented ? '<span class="badge">Soon</span>'
+                   : '<span class="badge">In the machine</span>';
       let foot;
       if (owned && active)      foot = `<button class="act ghost" disabled>In use</button>`;
       else if (owned)           foot = `<button class="act" data-use="${c.id}">Set active</button>`;
       else if (!c.implemented)  foot = `<button class="act ghost" disabled>Coming soon</button>`;
-      else                      foot = `<button class="act" data-buy="${c.id}" ${afford?'':'disabled'}>Unlock · <span class="cost">${c.cost}⚡</span></button>`;
+      else                      foot = `<button class="act ghost" disabled>🎰 Crank to adopt</button>`;
       const rar = (state.rarities && state.rarities[c.rarity]) || { label: c.rarity, color: '#9aa4b2' };
       const moveLabel = { walk:'walks', float:'floats', fly:'flies', swim:'swims' }[c.move] || c.move;
+      const mystery = !owned && c.implemented;         // hide identity of friends still in the machine
+      const pre = owned ? (EMOJI[c.id] || '⭐') : '❔';
       card.innerHTML = `
-        <div class="pre">${EMOJI[c.id] || '⭐'}</div>
-        <h3>${c.name} ${badge}</h3>
+        <div class="pre">${pre}</div>
+        <h3>${owned ? c.name : (c.implemented ? '???' : c.name)} ${badge}</h3>
         <div class="chips">
           <span class="chip" style="color:${rar.color};background:${rar.color}22">${rar.label}</span>
           <span class="chip">${moveLabel}</span>
         </div>
-        <p class="blurb">${c.blurb}</p>
+        <p class="blurb">${owned ? c.blurb : (mystery ? 'A mystery friend waiting in the gumball machine.' : c.blurb)}</p>
         <div class="foot">${foot}</div>`;
       grid.appendChild(card);
     }
-    grid.querySelectorAll('[data-buy]').forEach(b => b.addEventListener('click', async () => {
-      const r = await window.buddy.unlock(b.dataset.buy);
-      if (!r.ok && r.reason === 'poor') flash(b, 'Not enough ⚡');
-    }));
     grid.querySelectorAll('[data-use]').forEach(b => b.addEventListener('click', () => window.buddy.setActive(b.dataset.use)));
   }
 
@@ -152,6 +210,7 @@
       st.textContent = map[u.status] || '';
     }
   }
+  wireCrank();
   $('#checkUpdate').addEventListener('click', () => { window.buddy.checkUpdate(); $('#updateStatus').textContent = 'Checking…'; });
   $('#mail').addEventListener('dblclick', () => window.buddy.openEmail());
   { const wa = $('#wa'); if (wa) wa.addEventListener('dblclick', () => window.buddy.openWhatsApp()); }
@@ -163,10 +222,9 @@
   }
   window.buddy.onSparks((n) => {
     if (!state) return; state.sparks = n; paintWallet();
-    // keep buy/feed affordability fresh without a full repaint storm
-    document.querySelectorAll('[data-buy]').forEach(b => {
-      const c = state.catalog.find(x => x.id === b.dataset.buy); if (c) b.disabled = state.sparks < c.cost;
-    });
+    // keep the gumball crank's affordability fresh without a full repaint storm
+    const crank = $('#gmCrank'); const pool = state.gumballPool || [];
+    if (crank && !rolling) crank.disabled = pool.length === 0 || state.sparks < (state.gumballCost || 500);
   });
   window.buddy.onState((s) => { state = s; paintAll(); });
   window.buddy.getState().then((s) => { state = s; paintAll(); });

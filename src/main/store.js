@@ -2,7 +2,7 @@
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { DEFAULTS } = require('../shared/catalog');
+const { DEFAULTS, GUMBALL_COST } = require('../shared/catalog');
 
 const FILE = () => path.join(app.getPath('userData'), 'buddy-save.json');
 
@@ -31,6 +31,17 @@ function load() {
   }
   // guarantee the default character is always owned
   if (!state.owned.includes('blob')) state.owned.unshift('blob');
+
+  // migration → v3: the gumball machine replaces the old test-unlock-all.
+  // Put every non-Blob buddy back into the machine so they can be adopted by
+  // cranking it, and make sure there's enough for at least one crank.
+  if (!state.version || state.version < 3) {
+    state.owned = ['blob'];
+    state.active = 'blob';
+    if (!(state.sparks >= GUMBALL_COST)) state.sparks = GUMBALL_COST;
+    state.version = 3;
+    save();
+  }
   return state;
 }
 

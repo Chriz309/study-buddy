@@ -57,8 +57,41 @@ button.act:hover{filter:brightness(1.07)}
 button.act.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
 button.act.ghost:hover{border-color:var(--accent2)}
 button.act[disabled]{opacity:.45;cursor:not-allowed}
-.cost{font-weight:800;color:var(--accent)}
+.cost{font-weight:800;color:inherit}   /* sits inside the (yellow) button — inherit its dark text */
 .lvl{font-size:11px;color:var(--dim);font-weight:700}
+
+/* ---- gumball machine (gacha) ---- */
+.gumball{display:flex;gap:22px;align-items:center;background:linear-gradient(160deg,#20202c,#191922);
+  border:1px solid var(--line);border-radius:18px;padding:20px 22px;margin-bottom:20px}
+.gm-machine{width:132px;flex-shrink:0;display:flex;flex-direction:column;align-items:center}
+.gm-dome{position:relative;width:118px;height:118px;border-radius:50%;
+  background:radial-gradient(circle at 36% 30%,rgba(255,255,255,.5),rgba(255,255,255,.08) 40%,rgba(255,255,255,0) 60%),
+             rgba(120,200,255,.14);
+  border:3px solid #3a3a4d;overflow:hidden;box-shadow:inset 0 0 22px rgba(0,0,0,.4)}
+.gm-dome .ball{position:absolute;width:26px;height:26px;border-radius:50%;filter:drop-shadow(0 2px 2px rgba(0,0,0,.3))}
+.gm-base{width:104px;height:34px;margin-top:-4px;border-radius:7px 7px 9px 9px;
+  background:linear-gradient(#c23b5a,#9b2742);border:2px solid #3a3a4d;position:relative}
+.gm-slot{position:absolute;left:50%;bottom:7px;transform:translateX(-50%);width:34px;height:9px;
+  border-radius:3px;background:#2a1118}
+.gm-knob{position:absolute;right:12px;top:9px;width:14px;height:14px;border-radius:50%;background:#ffd23f;border:2px solid #7a5c00;
+  transition:transform .4s cubic-bezier(.5,1.6,.5,1)}
+.gumball.spin .gm-knob{transform:rotate(540deg)}
+.gumball.spin .gm-dome .ball{animation:jiggle .5s ease infinite}
+@keyframes jiggle{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.gm-info{flex:1;display:flex;flex-direction:column;gap:9px;min-width:0}
+.gm-info h2{font-size:18px;font-weight:900;display:flex;align-items:center;gap:8px}
+.gm-info p{font-size:12.5px;color:var(--dim);line-height:1.5;max-width:380px}
+.gm-crank{all:unset;cursor:pointer;align-self:flex-start;padding:11px 20px;border-radius:12px;
+  background:var(--accent);color:#1a1405;font-size:14px;font-weight:900;box-shadow:0 4px 0 #b78f10}
+.gm-crank:hover{filter:brightness(1.06)}
+.gm-crank:active{transform:translateY(3px);box-shadow:0 1px 0 #b78f10}
+.gm-crank[disabled]{opacity:.5;cursor:not-allowed;box-shadow:0 4px 0 #555;filter:none}
+.gm-result{font-size:13px;font-weight:800;min-height:20px;color:var(--good)}
+.gm-result.none{color:var(--dim)}
+.gm-reveal{display:inline-flex;align-items:center;gap:7px;animation:pop .5s cubic-bezier(.3,1.7,.5,1)}
+.gm-reveal .em{font-size:22px}
+@keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+.collection h4{font-size:13px;font-weight:800;color:var(--dim);margin:4px 0 12px;text-transform:uppercase;letter-spacing:.6px}
 
 /* ---- behaviour rows ---- */
 .rows{display:flex;flex-direction:column;gap:4px;max-width:640px}
@@ -118,8 +151,25 @@ select{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
 
   <main>
     <section id="shop" class="tab active">
-      <p class="hint">Your buddy earns Sparks on its own while it roams — even when this window is closed. Spend them here to unlock new characters. Owning more characters and feeding them raises how fast you earn.</p>
-      <div id="shopGrid"></div>
+      <p class="hint">Your buddy earns Sparks on its own while it roams — even when this window is closed. Give the gumball machine a crank to adopt a new friend at random. Owning more friends and feeding them raises how fast you earn.</p>
+
+      <div class="gumball" id="gumball">
+        <div class="gm-machine">
+          <div class="gm-dome" id="gmDome"></div>
+          <div class="gm-base"><span class="gm-knob"></span><span class="gm-slot"></span></div>
+        </div>
+        <div class="gm-info">
+          <h2>🎰 Gumball Machine</h2>
+          <p id="gmDesc">Crank the handle to adopt a random new buddy you don’t own yet.</p>
+          <button class="gm-crank" id="gmCrank">Crank · <span class="cost" id="gmCost">500⚡</span></button>
+          <div class="gm-result none" id="gmResult"></div>
+        </div>
+      </div>
+
+      <div class="collection">
+        <h4>Your collection</h4>
+        <div id="shopGrid"></div>
+      </div>
     </section>
 
     <section id="care" class="tab">

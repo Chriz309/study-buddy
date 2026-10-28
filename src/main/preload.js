@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('buddy', {
   // mutations (settings window)
   patchSettings: (patch) => ipcRenderer.invoke('settings:patch', patch),
   unlock:        (id) => ipcRenderer.invoke('buddy:unlock', id),
+  roll:          () => ipcRenderer.invoke('buddy:roll'),
   setActive:     (id) => ipcRenderer.invoke('buddy:setActive', id),
   earn:          (n) => ipcRenderer.invoke('buddy:earn', n),
   feed:          (id) => ipcRenderer.invoke('buddy:feed', id),

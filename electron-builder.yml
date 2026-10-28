@@ -16,6 +16,7 @@ publish:
   provider: github
   owner: Chriz309
   repo: study-buddy
+  releaseType: release      # publish (not draft) so electron-updater can see it
 
 win:
   icon: assets/icon.ico

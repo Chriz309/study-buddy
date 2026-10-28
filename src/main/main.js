@@ -4,7 +4,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const store = require('./store');
 const engine = require('./engine');
-const { CHARACTERS, CURRENCY, RARITIES, PERSONALITIES, characterById } = require('../shared/catalog');
+const { CHARACTERS, CURRENCY, GUMBALL_COST, RARITIES, PERSONALITIES, characterById } = require('../shared/catalog');
 
 const ASSETS = path.join(__dirname, '..', '..', 'assets');
 const INDEX = path.join(__dirname, '..', 'renderer', 'index.html');
@@ -174,8 +174,10 @@ function openSettings() {
 // --- broadcast state (settings window + overlays for size/speech/etc) ----
 function fullState() {
   const s = store.get();
+  const pool = CHARACTERS.filter(c => c.implemented && !s.owned.includes(c.id)).map(c => c.id);
   return { ...s, catalog: CHARACTERS, currency: CURRENCY, rarities: RARITIES, personalities: PERSONALITIES,
-    rate: sparkRate(), update, platform: process.platform, appVersion: app.getVersion() };
+    rate: sparkRate(), gumballCost: GUMBALL_COST, gumballPool: pool,
+    update, platform: process.platform, appVersion: app.getVersion() };
 }
 function pushState() {
   const payload = fullState();
@@ -247,6 +249,18 @@ ipcMain.handle('buddy:unlock', (_e, id) => {
   if (s.owned.includes(id)) return { ok: true };
   if (s.sparks < c.cost) return { ok: false, reason: 'poor' };
   store.set({ sparks: +(s.sparks - c.cost).toFixed(3), owned: [...s.owned, id], active: id }); pushState(); return { ok: true };
+});
+// Gumball machine: spend Sparks for a random buddy you don't own yet.
+ipcMain.handle('buddy:roll', () => {
+  const s = store.get();
+  const pool = CHARACTERS.filter(c => c.implemented && !s.owned.includes(c.id));
+  if (pool.length === 0) return { ok: false, reason: 'complete' };          // owns everything available
+  if (s.sparks < GUMBALL_COST) return { ok: false, reason: 'poor', cost: GUMBALL_COST };
+  const got = pool[Math.floor(Math.random() * pool.length)];
+  store.set({ sparks: +(s.sparks - GUMBALL_COST).toFixed(3), owned: [...s.owned, got.id], active: got.id });
+  syncActiveChar(); pushState();
+  const left = CHARACTERS.filter(c => c.implemented && !store.get().owned.includes(c.id)).length;
+  return { ok: true, got: got.id, name: got.name, rarity: got.rarity, emoji: got.id, remaining: left, sparks: store.get().sparks };
 });
 ipcMain.handle('buddy:setActive', (_e, id) => { const s = store.get(); if (s.owned.includes(id)) { store.set({ active: id }); syncActiveChar(); pushState(); } return fullState(); });
 ipcMain.handle('buddy:earn', (_e, n) => { const s = store.get(); store.set({ sparks: +(s.sparks + Math.max(0, n || 0)).toFixed(3) }); return store.get().sparks; });

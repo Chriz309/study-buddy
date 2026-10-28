@@ -37,7 +37,7 @@ function createOverlays() {
     w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     w.setIgnoreMouseEvents(true, { forward: true });
     w.loadFile(INDEX);
-    w.once('ready-to-show', () => { w.showInactive(); w.webContents.send('state', fullState()); });
+    w.once('ready-to-show', () => { applyVisibility(); w.webContents.send('state', fullState()); });
     w.on('closed', () => { overlays.delete(d.id); });
     overlays.set(d.id, w);
   }
@@ -45,9 +45,17 @@ function createOverlays() {
   syncEngineSettings();
 }
 function destroyOverlays() { for (const w of overlays.values()) if (w && !w.isDestroyed()) w.destroy(); overlays.clear(); }
-function showAllOverlays() { if (overlays.size === 0) createOverlays(); else for (const w of overlays.values()) if (w && !w.isDestroyed()) w.showInactive(); }
-function hideAllOverlays() { for (const w of overlays.values()) if (w && !w.isDestroyed()) w.hide(); }
-function overlaysVisible() { for (const w of overlays.values()) if (w && !w.isDestroyed() && w.isVisible()) return true; return false; }
+let userHidden = false;   // user hid the buddy via the tray
+function applyVisibility() {
+  for (const [id, w] of overlays) { if (!w || w.isDestroyed()) continue;
+    const vis = !userHidden && !fsDisplays.has(id);
+    if (vis && !w.isVisible()) w.showInactive();
+    else if (!vis && w.isVisible()) w.hide();
+  }
+}
+function showAllOverlays() { userHidden = false; if (overlays.size === 0) createOverlays(); applyVisibility(); }
+function hideAllOverlays() { userHidden = true; applyVisibility(); }
+function overlaysVisible() { return !userHidden && overlays.size > 0; }
 function winOf(sender) { for (const w of overlays.values()) if (w && !w.isDestroyed() && w.webContents === sender) return w; return null; }
 
 function ownerDisplay() {
@@ -110,27 +118,37 @@ function syncEngineSettings() {
 // --- window awareness: perch on the active window's top edge -------------
 // Reads the foreground window rect on Windows and feeds the engine a "ledge".
 // Fails safe: any error/uncertainty -> no ledge -> normal desktop behaviour.
-const PS_FG = 'Add-Type -Namespace Win -Name U -MemberDefinition \'[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r); public struct RECT { public int left, top, right, bottom; }\' ; $h=[Win.U]::GetForegroundWindow(); $r=New-Object Win.U+RECT; [void][Win.U]::GetWindowRect($h,[ref]$r); Write-Output ("{0},{1},{2},{3}" -f $r.left,$r.top,$r.right,$r.bottom)';
+const PS_FG = 'Add-Type -Namespace Win -Name U -MemberDefinition \'[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern int GetClassName(System.IntPtr h, System.Text.StringBuilder s, int m); public struct RECT { public int left, top, right, bottom; }\' ; $h=[Win.U]::GetForegroundWindow(); $r=New-Object Win.U+RECT; [void][Win.U]::GetWindowRect($h,[ref]$r); $sb=New-Object System.Text.StringBuilder 256; [void][Win.U]::GetClassName($h,$sb,256); Write-Output ("{0},{1},{2},{3}|{4}" -f $r.left,$r.top,$r.right,$r.bottom,$sb.ToString())';
+const SHELL_CLASSES = new Set(['Progman', 'WorkerW', '']);
 let fgBusy = false;
+let fsDisplays = new Set();   // display ids currently covered by a fullscreen app
 function pollForeground() {
   try {
-    if (process.platform !== 'win32') { engine.setLedge(null); return; }
+    if (process.platform !== 'win32') { engine.setLedge(null); if (fsDisplays.size) { fsDisplays = new Set(); applyVisibility(); } return; }
     if (fgBusy) return;
-    if (!store.get().settings.windowAware) { engine.setLedge(null); return; }
+    const aware = store.get().settings.windowAware;
     fgBusy = true;
     execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', PS_FG], { timeout: 2500, windowsHide: true }, (err, stdout) => {
       fgBusy = false;
       try {
-        if (err || !stdout) return engine.setLedge(null);
-        const m = stdout.trim().split(',').map(Number);
-        if (m.length !== 4 || m.some(n => !isFinite(n))) return engine.setLedge(null);
-        const [l, t, r, b] = m; if (r <= l || b <= t) return engine.setLedge(null);
+        if (err || !stdout) { engine.setLedge(null); return; }
+        const [rectPart, cls = ''] = stdout.trim().split('|');
+        const m = rectPart.split(',').map(Number);
+        if (m.length !== 4 || m.some(n => !isFinite(n))) { engine.setLedge(null); return; }
+        const [l, t, r, b] = m; if (r <= l || b <= t) { engine.setLedge(null); return; }
         const tl = screen.screenToDipPoint({ x: l, y: t }), br = screen.screenToDipPoint({ x: r, y: b });
         const x0 = tl.x, y0 = tl.y, x1 = br.x, y1 = br.y, w = x1 - x0, h = y1 - y0;
         const d = screen.getDisplayNearestPoint({ x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2) });
-        const wa = d.workArea;
-        const coversDisplay = (x0 <= wa.x + 4 && x1 >= wa.x + wa.width - 4 && y0 <= wa.y + 4);
-        const normal = w > 220 && h > 120 && y0 > wa.y + 48 && y0 < wa.y + wa.height - 80 && !coversDisplay;
+        const wa = d.workArea, bd = d.bounds;
+        // --- fullscreen detection: covers the FULL monitor (incl. taskbar) and not the shell ---
+        const isShell = SHELL_CLASSES.has((cls || '').trim());
+        const fullscreen = !isShell && x0 <= bd.x + 2 && y0 <= bd.y + 2 && x1 >= bd.x + bd.width - 2 && y1 >= bd.y + bd.height - 2;
+        const nextFs = new Set(fsDisplays);
+        if (fullscreen) nextFs.add(d.id); else nextFs.delete(d.id);
+        if (nextFs.size !== fsDisplays.size || [...nextFs].some(id => !fsDisplays.has(id))) { fsDisplays = nextFs; applyVisibility(); }
+        // --- ledge: perch on a normal floating window's top edge ---
+        const coversWork = (x0 <= wa.x + 4 && x1 >= wa.x + wa.width - 4 && y0 <= wa.y + 4);
+        const normal = aware && !fullscreen && !isShell && w > 220 && h > 120 && y0 > wa.y + 48 && y0 < wa.y + wa.height - 80 && !coversWork;
         engine.setLedge(normal ? { x0: x0 + 8, x1: x1 - 8, y: y0 } : null);
       } catch { engine.setLedge(null); }
     });

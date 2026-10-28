@@ -18,3 +18,4 @@ Per-version detail below (newest first).
 
 ## 2026-10-28 (morning, Chris awake)
 - **v0.3.13** — The blob now **decides to climb up to the active window on its own** (hops to the window's edge, scales it, and perches on top) instead of only landing there when dropped.
+- **v0.3.14** — **Fullscreen hide**: when a fullscreen app (game/video) covers a monitor, the blob's overlay on that monitor hides (desktop shell excluded so it does not hide on the desktop). Experimental — please confirm with a fullscreen game/video.

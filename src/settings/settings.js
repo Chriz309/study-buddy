@@ -144,6 +144,7 @@
         <div class="lvl">Level ${lvl} · +${(0.1 * lvl).toFixed(1)}⚡/s bonus</div>
         <div class="swlabel">Colour</div>
         <div class="swatches">${swatches}</div>
+        ${(state.devTools && c.id !== 'blob') ? `<button class="sell" data-sell="${c.id}">🧪 Sell (dev)</button>` : ''}
         <div class="foot">
           <button class="act" data-feed="${c.id}" ${afford?'':'disabled'}>Feed · <span class="cost">${cost}⚡</span></button>
         </div>`;
@@ -159,6 +160,7 @@
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
     });
     grid.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => window.buddy.setColor(b.dataset.col, +b.dataset.hue)));
+    grid.querySelectorAll('[data-sell]').forEach(b => b.addEventListener('click', () => window.buddy.devSell(b.dataset.sell)));
   }
 
   function flash(btn, msg) {
@@ -239,6 +241,7 @@
   $('#ctlDrive').addEventListener('click', () => window.buddy.openDrive());
   $('#ctlQuit').addEventListener('click', () => window.buddy.quit());
   $('#ctlHide').addEventListener('click', () => { if (state && state.buddyHidden) window.buddy.showBuddy(); else window.buddy.hideBuddy(); });
+  $('#ctlDev').addEventListener('click', () => window.buddy.devAddSparks());
   $('#mail').addEventListener('dblclick', () => window.buddy.openEmail());
   { const wa = $('#wa'); if (wa) wa.addEventListener('dblclick', () => window.buddy.openWhatsApp()); }
 
@@ -246,6 +249,7 @@
   function paintAll() {
     paintWallet(); paintShop(); paintCare(); paintBehaviour(); paintAbout();
     $('#aboutVer').textContent = 'current version ' + (state.appVersion || '—');
+    const dv = $('#ctlDev'); if (dv) dv.style.display = state.devTools ? '' : 'none';
   }
   window.buddy.onSparks((n) => {
     if (!state) return; state.sparks = n; paintWallet();

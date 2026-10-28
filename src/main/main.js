@@ -4,7 +4,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const store = require('./store');
 const engine = require('./engine');
-const { CHARACTERS, CURRENCY, GUMBALL_COST, RARITIES, PERSONALITIES, characterById } = require('../shared/catalog');
+const { CHARACTERS, CURRENCY, DEV_TOOLS, GUMBALL_COST, RARITIES, PERSONALITIES, characterById } = require('../shared/catalog');
 
 const ASSETS = path.join(__dirname, '..', '..', 'assets');
 const INDEX = path.join(__dirname, '..', 'renderer', 'index.html');
@@ -215,7 +215,7 @@ function fullState() {
   const pool = CHARACTERS.filter(c => c.implemented && !s.owned.includes(c.id)).map(c => c.id);
   return { ...s, catalog: CHARACTERS, currency: CURRENCY, rarities: RARITIES, personalities: PERSONALITIES,
     rate: sparkRate(), gumballCost: gumballCost(), gumballPool: pool, buddyHidden: userHidden,
-    update, platform: process.platform, appVersion: app.getVersion() };
+    devTools: DEV_TOOLS, update, platform: process.platform, appVersion: app.getVersion() };
 }
 function pushState() {
   const payload = fullState();
@@ -355,9 +355,41 @@ ipcMain.handle('buddy:roll', () => {
   const got = pool[Math.floor(Math.random() * pool.length)];
   store.set({ sparks: +(s.sparks - cost).toFixed(3), owned: [...s.owned, got.id], active: got.id });
   syncActiveChar(); pushState();
+  showHatch(got.id, got.name, got.rarity);   // egg-hatch reveal on the desktop
   const left = CHARACTERS.filter(c => c.implemented && !store.get().owned.includes(c.id)).length;
   return { ok: true, got: got.id, name: got.name, rarity: got.rarity, emoji: got.id, remaining: left, sparks: store.get().sparks };
 });
+// --- egg-hatch reveal window --------------------------------------------
+let hatchWin = null;
+function showHatch(id, name, rarity) {
+  try { if (hatchWin && !hatchWin.isDestroyed()) hatchWin.destroy(); } catch {}
+  const wa = screen.getPrimaryDisplay().workArea; const W = 460, H = 460;
+  hatchWin = new BrowserWindow({
+    width: W, height: H, x: Math.round(wa.x + (wa.width - W) / 2), y: Math.round(wa.y + (wa.height - H) / 2),
+    transparent: true, frame: false, resizable: false, movable: false, skipTaskbar: true,
+    alwaysOnTop: true, hasShadow: false, show: false, fullscreenable: false, focusable: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.js') },
+  });
+  hatchWin.setAlwaysOnTop(true, 'screen-saver');
+  hatchWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  hatchWin.loadFile(path.join(__dirname, '..', 'settings', 'reveal.html'),
+    { search: `id=${encodeURIComponent(id)}&name=${encodeURIComponent(name || '')}&rarity=${encodeURIComponent(rarity || '')}` });
+  hatchWin.once('ready-to-show', () => hatchWin.show());
+  hatchWin.on('closed', () => { hatchWin = null; });
+  setTimeout(() => { try { if (hatchWin && !hatchWin.isDestroyed()) hatchWin.destroy(); } catch {} }, 9000);  // safety
+}
+ipcMain.on('hatch:done', () => { try { if (hatchWin && !hatchWin.isDestroyed()) hatchWin.destroy(); } catch {} });
+
+// --- DEV-ONLY testing tools (gated by DEV_TOOLS; absent in public builds) ---
+ipcMain.handle('dev:addSparks', () => { if (!DEV_TOOLS) return fullState(); const s = store.get(); store.set({ sparks: +(s.sparks + 500000).toFixed(3) }); pushState(); return fullState(); });
+ipcMain.handle('dev:sell', (_e, id) => {
+  if (!DEV_TOOLS) return fullState();
+  const s = store.get(); if (id === 'blob' || !s.owned.includes(id)) return fullState();
+  const owned = s.owned.filter(x => x !== id);
+  const active = (s.active === id) ? 'blob' : s.active;
+  store.set({ owned, active }); syncActiveChar(); pushState(); return fullState();
+});
+
 ipcMain.handle('buddy:setActive', (_e, id) => { const s = store.get(); if (s.owned.includes(id)) { store.set({ active: id }); syncActiveChar(); pushState(); } return fullState(); });
 ipcMain.handle('buddy:rename', (_e, id, name) => {
   const s = store.get(); if (!s.owned.includes(id)) return fullState();

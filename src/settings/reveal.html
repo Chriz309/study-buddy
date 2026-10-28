@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src data:;" />
+  <style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:transparent;overflow:hidden;
+  font-family:"Segoe UI",system-ui,sans-serif;-webkit-user-select:none;user-select:none;cursor:default}
+#stage{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+#glow{position:absolute;left:50%;top:44%;width:360px;height:360px;transform:translate(-50%,-50%) scale(0);
+  background:radial-gradient(circle,rgba(255,210,63,.55),rgba(255,210,63,0) 60%);opacity:0;transition:opacity .5s,transform .6s}
+#eggwrap{position:relative;width:170px;height:210px}
+.half{position:absolute;inset:0}
+#eggTop{clip-path:polygon(0 0,100% 0,100% 45%,92% 50%,84% 45%,76% 50%,68% 45%,60% 50%,52% 45%,44% 50%,36% 45%,28% 50%,20% 45%,12% 50%,0 45%)}
+#eggBottom{clip-path:polygon(0 45%,12% 50%,20% 45%,28% 50%,36% 45%,44% 50%,52% 45%,60% 50%,68% 45%,76% 50%,84% 45%,92% 50%,100% 45%,100% 100%,0 100%)}
+#eggwrap, #buddy{will-change:transform}
+#buddy{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%) scale(0);font-size:96px;line-height:1;
+  filter:drop-shadow(0 6px 10px rgba(0,0,0,.25))}
+#label{opacity:0;transform:translateY(8px);transition:opacity .4s,transform .4s;text-align:center;margin-top:120px}
+#label .t{font-size:22px;font-weight:900;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.5)}
+#label .r{display:inline-block;margin-top:7px;font-size:12px;font-weight:800;padding:3px 12px;border-radius:20px;
+  background:rgba(0,0,0,.35);backdrop-filter:blur(2px)}
+.spark{position:absolute;left:50%;top:44%;width:10px;height:10px;border-radius:50%;opacity:0;pointer-events:none}
+
+/* --- states --- */
+#stage.in #glow{opacity:.9;transform:translate(-50%,-50%) scale(1)}
+#stage.in #eggwrap{animation:pop .5s cubic-bezier(.3,1.7,.5,1) both}
+@keyframes pop{from{transform:scale(0) translateY(20px)}to{transform:scale(1) translateY(0)}}
+#stage.wobble #eggwrap{animation:wob 1.1s ease-in-out}
+@keyframes wob{0%,100%{transform:rotate(0)}15%{transform:rotate(-9deg)}30%{transform:rotate(8deg)}45%{transform:rotate(-7deg)}60%{transform:rotate(6deg)}75%{transform:rotate(-4deg)}}
+#stage.crack #eggwrap{animation:shake .4s linear 2}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px) rotate(-2deg)}75%{transform:translateX(4px) rotate(2deg)}}
+#stage.crack #crackline{stroke-dashoffset:0}
+#stage.hatch #eggTop{transform:translate(-18px,-150px) rotate(-26deg);opacity:0;transition:transform .7s cubic-bezier(.3,1,.4,1),opacity .7s}
+#stage.hatch #eggBottom{transform:translateY(34px) rotate(7deg);opacity:0;transition:transform .7s ease,opacity .7s}
+#stage.hatch #glow{opacity:1;transform:translate(-50%,-50%) scale(1.25)}
+#stage.hatch #buddy{animation:hatchpop .8s cubic-bezier(.3,1.6,.5,1) forwards}
+@keyframes hatchpop{0%{transform:translate(-50%,-50%) scale(0)}60%{transform:translate(-50%,-62%) scale(1.18)}100%{transform:translate(-50%,-58%) scale(1)}}
+#stage.hatch #label{opacity:1;transform:translateY(0);transition-delay:.25s}
+#stage.hatch .spark{animation:burst .9s ease-out forwards}
+@keyframes burst{0%{opacity:1;transform:translate(-50%,-50%) scale(.3)}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(1)}}
+#stage.out{opacity:0;transition:opacity .6s ease}
+  </style>
+  <title>Hatch</title>
+</head>
+<body>
+  <div id="stage">
+    <div id="glow"></div>
+    <div id="eggwrap">
+      <div class="half" id="eggBottom"></div>
+      <div class="half" id="eggTop"></div>
+      <svg id="crack" width="170" height="210" viewBox="0 0 170 210" style="position:absolute;inset:0">
+        <polyline id="crackline" points="6,96 30,104 54,92 80,106 104,94 130,104 164,95"
+          fill="none" stroke="#5a4a2a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"
+          stroke-dasharray="260" stroke-dashoffset="260" style="transition:stroke-dashoffset .35s ease"/>
+      </svg>
+    </div>
+    <div id="buddy">⭐</div>
+    <div id="label"><div class="t" id="ltext">New buddy!</div><span class="r" id="lrar"></span></div>
+  </div>
+  <script src="reveal.js"></script>
+</body>
+</html>

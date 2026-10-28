@@ -145,6 +145,11 @@ select{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
   border-radius:9px;background:var(--panel2);border:1px solid var(--line);font-size:12.5px;font-weight:800;color:var(--text);line-height:1}
 .hdrctl button:hover{border-color:var(--accent2);background:#2a2a38}
 .hdrctl button.danger:hover{border-color:var(--bad);color:var(--bad)}
+.hdrctl button.dev{background:rgba(192,139,255,.16);border-color:#c08bff;color:#d9bcff}
+.hdrctl button.dev:hover{background:rgba(192,139,255,.28)}
+button.sell{all:unset;cursor:pointer;font-size:11px;font-weight:800;color:#d9bcff;background:rgba(192,139,255,.14);
+  border:1px solid #6a4a9a;border-radius:8px;padding:5px 9px;text-align:center;margin-top:4px}
+button.sell:hover{background:rgba(192,139,255,.26)}
 
   </style>
   <title>Study Buddy</title>
@@ -156,6 +161,7 @@ select{background:var(--panel2);color:var(--text);border:1px solid var(--line);b
       <button id="ctlHide" title="Hide buddy">🙈 Hide</button>
       <button id="ctlDrive" title="Open the Drive">📂 Drive</button>
       <button id="ctlQuit" class="danger" title="Quit Study Buddy">⏻ Quit</button>
+      <button id="ctlDev" class="dev" title="DEV: +500,000 Sparks" style="display:none">🧪 +⚡</button>
     </div>
     <div class="wallet">
       <div class="bal"><span id="sparks">0</span> <span class="unit">Sparks</span></div>

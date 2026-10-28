@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('buddy', {
   setActive:     (id) => ipcRenderer.invoke('buddy:setActive', id),
   rename:        (id, name) => ipcRenderer.invoke('buddy:rename', id, name),
   setColor:      (id, hue) => ipcRenderer.invoke('buddy:setColor', id, hue),
+  devAddSparks:  () => ipcRenderer.invoke('dev:addSparks'),
+  devSell:       (id) => ipcRenderer.invoke('dev:sell', id),
+  hatchDone:     () => ipcRenderer.send('hatch:done'),
   earn:          (n) => ipcRenderer.invoke('buddy:earn', n),
   feed:          (id) => ipcRenderer.invoke('buddy:feed', id),
 

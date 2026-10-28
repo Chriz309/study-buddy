@@ -7,7 +7,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sign=(v)=>v<0?-1:1;
 
 const Engine = {
-  hooks:{}, size:140, baseSpeed:80,
+  hooks:{}, size:140, baseSpeed:80, moveType:'walk',
   pos:{x:300,y:200}, vel:{x:0,y:0}, facing:1,
   state:'idle', stateUntil:0, nextDecision:0, lastChange:0, target:null,
   onFloor:false, dragging:false, parachute:false, recent:[], cursor:{x:0,y:0},
@@ -27,6 +27,7 @@ const Engine = {
     this.pos.y=clamp(this.pos.y,this.world.y0,this.world.y1-this.size);
   },
   setSize(px){ this.size=px; },
+  setMoveType(t){ if(t&&t!==this.moveType){ this.moveType=t; this.target=null; this._wantClimb=this._peeking=false; this._climbStopY=null; this.onFloor=(t!=='float'); this.setState('idle',300); } },
   setSettings(s){ Object.assign(this.settings,s); },
   setCursor(p){ this.cursor=p; },
   setLedge(seg){ this.ledge=seg||null; },
@@ -42,7 +43,9 @@ const Engine = {
   dragTo(x,y){ const nx=clamp(x-this.size/2,this.world.x0-this.size*0.3,this.world.x1-this.size*0.7);
     const ny=clamp(y-this.size/2,this.world.y0-this.size*0.3,this.world.y1-this.size*0.3);
     this.vel.x=(nx-this.pos.x)*12; this.vel.y=(ny-this.pos.y)*12; this.pos.x=nx; this.pos.y=ny; },
-  release(){ this.dragging=false; this.onFloor=false; this.vel.x=clamp(this.vel.x,-1400,1400); this.vel.y=clamp(this.vel.y,-1400,1400); this.setState('fall',1e9);
+  release(){ this.dragging=false;
+    if(this.moveType==='float'){ this.target=null; this.setState('idle',300); return; }   // ghosts just resume floating
+    this.onFloor=false; this.vel.x=clamp(this.vel.x,-1400,1400); this.vel.y=clamp(this.vel.y,-1400,1400); this.setState('fall',1e9);
     if(Math.hypot(this.vel.x,this.vel.y)>950) this.hooks.event&&this.hooks.event('dizzy'); this._maybeParachute(); },
   _maybeParachute(){ const drop=this.floorAt(this.pos.x)-this.pos.y; if(!this.parachute && drop>150 && Math.random()<0.4){ this.parachute=true; if(this.vel.y>120)this.vel.y=120; this.hooks.event&&this.hooks.event('parachuteOpen'); } },
   petted(){ this.hooks.event&&this.hooks.event('pet'); },
@@ -88,7 +91,8 @@ const Engine = {
     if(!this.dragging) this.step(dt,now);
     if(!this.dragging&&this.state!=='sleep'&&this.state!=='drag'&&this.state!=='climb'&&now-this.lastChange>7000){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
   },
-  step(dt,now){ const spd=this.baseSpeed*(this.settings.speed||1)*(this.settings.personality==='hyper'?1.5:this.settings.personality==='sleepy'?.6:1);
+  step(dt,now){ if(this.moveType==='float'){ return this.stepFloat(dt,now); }
+    const spd=this.baseSpeed*(this.settings.speed||1)*(this.settings.personality==='hyper'?1.5:this.settings.personality==='sleepy'?.6:1);
     const x0=this.world.x0,x1=this.world.x1;
     const climbing=this._wantClimb&&Math.abs(this.pos.x-(this.climbEdge==null?-1e9:this.climbEdge))<2;
     if(climbing){ if(this.state!=='climb') this.setState('climb',1e9); this.pos.y-=spd*1.3*dt; this.facing=this.climbEdge===x0?1:-1;
@@ -115,6 +119,26 @@ const Engine = {
     this.pos.x=clamp(this.pos.x,x0,x1-this.size);
     if(now>this.nextDecision&&this.onFloor&&!this._wantClimb&&['idle','sit','walk'].includes(this.state)&&(this.state!=='walk'||this.target==null)) this.decide();
     if(this.state==='sleep'&&now>this.stateUntil) this.setState('idle',300); },
+  // --- floating creatures (ghost): drift freely, no gravity/hops/climb ---
+  stepFloat(dt,now){ const W0=this.world.x0,W1=this.world.x1,H0=this.world.y0,H1=this.world.y1;
+    if(this.state==='drag'){ return; }
+    if(this.state!=='sleep'){
+      if(!this.target||typeof this.target!=='object') this.target={x:rnd(W0+40,W1-40),y:rnd(H0+40,H0+(H1-H0)*0.62)};
+      const tx=this.target.x-this.size/2, ty=this.target.y-this.size/2, e=Math.min(1,dt*1.25*(this.settings.speed||1));
+      this.pos.x+=(tx-this.pos.x)*e; this.pos.y+=(ty-this.pos.y)*e;
+      this.facing=sign((tx-this.pos.x)||this.facing);
+      if(Math.abs(tx-this.pos.x)<6&&Math.abs(ty-this.pos.y)<6) this.target=null;
+    } else if(now>this.stateUntil) this.setState('idle',200);
+    this.pos.x=clamp(this.pos.x,W0,W1-this.size); this.pos.y=clamp(this.pos.y,H0,H1-this.size);
+    if(now>this.nextDecision) this.decideFloat(now);
+  },
+  decideFloat(now){ const r=Math.random();
+    if(r<0.16) this.nap();
+    else if(r<0.32){ this.hooks.event&&this.hooks.event('phase'); this.setState('idle',0); }      // phase out/in
+    else if(r<0.50){ this.target={x:clamp(this.cursor.x,20,this.world.x1-20),y:clamp(this.cursor.y,20,this.world.y1-20)}; if(Math.random()<.4)this.hooks.event&&this.hooks.event('say',{kind:'idle'}); this.setState('idle',0); }
+    else { this.target={x:rnd(this.world.x0+40,this.world.x1-40),y:rnd(this.world.y0+40,this.world.y0+(this.world.y1-this.world.y0)*0.62)}; this.setState('idle',0); }
+    this.nextDecision=now+rnd(2200,4200);
+  },
   hitTest(x,y){ const pad=14; return x>=this.pos.x-pad&&x<=this.pos.x+this.size+pad&&y>=this.pos.y-pad&&y<=this.pos.y+this.size+pad; },
 };
 module.exports = Engine;

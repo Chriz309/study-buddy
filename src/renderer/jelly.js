@@ -56,7 +56,7 @@
       this.px[k]=this.restx[k]*sx; this.py[k]=this.resty[k]*sy; this.vx[k]=0; this.vy[k]=0; } }
     squash(a){ a*=this.squish; this.impulse(1+0.55*a,1-0.6*a); }
     stretch(a){ a*=this.squish; this.impulse(1-0.30*a,1+0.45*a); }
-    step(dt){ const N=this.N,n=(N+1)*(N+1),k=this.k,damp=Math.exp(-this.damp*dt),cpl=this.coupling;
+    step(dt){ this._wt=(this._wt||0)+dt; const N=this.N,n=(N+1)*(N+1),k=this.k,damp=Math.exp(-this.damp*dt),cpl=this.coupling;
       const px=this.px,py=this.py,vx=this.vx,vy=this.vy,rx=this.restx,ry=this.resty,id=(i,j)=>j*(N+1)+i;
       for(let i=0;i<n;i++){ vx[i]+=k*(rx[i]-px[i])*dt; vy[i]+=k*(ry[i]-py[i])*dt; }
       const nvx=new Float32Array(n),nvy=new Float32Array(n);
@@ -74,8 +74,11 @@
     draw(){ const gl=this.gl; gl.viewport(0,0,this.c.width,this.c.height);
       gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); if(!this.ready) return;
       gl.useProgram(this.prog); gl.uniform2f(this.uRes,this.c.width,this.c.height);
-      gl.bindBuffer(gl.ARRAY_BUFFER,this.posBuf); const n=(this.N+1)*(this.N+1),pos=new Float32Array(n*2);
-      for(let i=0;i<n;i++){ pos[i*2]=this.px[i]+this.ox; pos[i*2+1]=this.py[i]+this.oy; }
+      gl.bindBuffer(gl.ARRAY_BUFFER,this.posBuf); const N=this.N,n=(N+1)*(N+1),pos=new Float32Array(n*2);
+      const wt=this._wt||0;
+      for(let i=0;i<n;i++){ let x=this.px[i]+this.ox; const y=this.py[i]+this.oy;
+        if(this.wave){ const j=(i/(N+1))|0; if(j>=N-3){ const col=i%(N+1), d=(j-(N-3))/3; x+=Math.sin(wt*3.2+col*0.9)*this.h*0.055*d; } }
+        pos[i*2]=x; pos[i*2+1]=y; }
       gl.bufferData(gl.ARRAY_BUFFER,pos,gl.DYNAMIC_DRAW);
       gl.enableVertexAttribArray(this.aPos); gl.vertexAttribPointer(this.aPos,2,gl.FLOAT,false,0,0);
       gl.bindBuffer(gl.ARRAY_BUFFER,this.uvBuf); gl.enableVertexAttribArray(this.aUV); gl.vertexAttribPointer(this.aUV,2,gl.FLOAT,false,0,0);

@@ -17,5 +17,7 @@ Per-version detail below (newest first).
 - **v0.3.3** — Smooth slime head (removed antenna/orb), small default size (85), and CI now publishes a Release on every push so the installed app auto-updates.
 
 ## 2026-10-28 (morning, Chris awake)
+- **v0.3.15** — **New character: Boo the ghost** 👻 — the first roster-mate since the art pivot. He **floats** (no gravity, gentle bob), his **bottom edge swirls constantly** (traveling wave through the tails), and he can **phase in and out** (fades to a faint shimmer and back) as his signature ability. Animated vector face rides the wavy body just like the blob's. Switch between Blob and Boo from the tray/settings; both share the same soft-body + expression engine. Owned by default in this test build so you can try him right away.
+- **v0.3.14** — **Fullscreen-hide**: the overlay now hides itself on any monitor running a fullscreen app (game/Netflix/video), per monitor, and comes back when you exit. (Please confirm live.)
 - **v0.3.13** — The blob now **decides to climb up to the active window on its own** (hops to the window's edge, scales it, and perches on top) instead of only landing there when dropped.
 - **v0.3.14** — **Fullscreen hide**: when a fullscreen app (game/video) covers a monitor, the blob's overlay on that monitor hides (desktop shell excluded so it does not hide on the desktop). Experimental — please confirm with a fullscreen game/video.

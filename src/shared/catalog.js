@@ -13,7 +13,8 @@ const CURRENCY = { name: 'Sparks', symbol: '⚡' }; // ⚡
 // return later via the gacha, each generated through the Canva -> cutout ->
 // soft-body-mesh pipeline. (search: ROSTER)
 const CHARACTERS = [
-  { id: 'blob', name: 'Blob', tier: 1, move: 'walk', rarity: 'common', cost: 0, personality: 'sunny', blurb: 'A cheerful little slime. Squishy, glossy, alive.', implemented: true },
+  { id: 'blob',  name: 'Blob', tier: 1, move: 'walk',  rarity: 'common',   cost: 0,   personality: 'sunny', blurb: 'A cheerful little slime. Squishy, glossy, alive.', implemented: true },
+  { id: 'ghost', name: 'Boo',  tier: 1, move: 'float', rarity: 'uncommon', cost: 600, personality: 'shy',   blurb: 'A bashful ghost — floats, swirls, and phases in and out.', implemented: true },
 ];
 
 const RARITIES = {

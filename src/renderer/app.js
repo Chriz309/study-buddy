@@ -7,9 +7,9 @@
   if(window.PARACHUTE_ART) chute.src=window.PARACHUTE_ART;
   if(window.FOOD_ART) food.src=window.FOOD_ART;
   let chuteOn=false, foodT=0, foodOn=false;
-  const IMG=window.BLOB_ART||'art/blob-body.png';
+  const CHARS={ blob:{art:window.BLOB_ART, float:false, swirl:false}, ghost:{art:window.GHOST_ART, float:true, swirl:true} };
   let dpr=Math.max(1,window.devicePixelRatio||1);
-  let jelly, face, settings=null, ready=false;
+  let jelly, face, settings=null, ready=false, curChar='blob', floatMode=false, images={};
   let pet={show:false,x:0,y:0,size:140,state:'idle',facing:1};
   let disp={x:0,y:0}, lastState='idle', dragging=false, speechTimer=0, zzzTimer=0, idleAcc=0, lastSize=0;
 
@@ -18,8 +18,12 @@
 
   jelly=new Jelly(glc,{grid:12,squish:1.1,stiffness:135,damp:5.3,coupling:0.3});
   face=new Face(faceSvg); face.setExpr('neutral');
-  const img=new Image(); img.onload=()=>{ jelly.aspect=img.width/img.height; jelly.load(img); applySize(); ready=true; };
-  img.src=IMG;
+  function loadChar(id){ const cfg=CHARS[id]||CHARS.blob;
+    const apply=(im)=>{ jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=!!cfg.swirl; floatMode=!!cfg.float; curChar=id; applySize(); ready=true; };
+    if(images[id]){ apply(images[id]); return; }
+    const im=new Image(); im.onload=()=>{ images[id]=im; apply(im); };
+    im.src=cfg.art||('art/'+(id==='ghost'?'ghost-body.png':'blob-body.png')); }
+  loadChar('blob');
 
   function applySize(){ const cssH=pet.size||(settings&&settings.size)||140; const asp=jelly.aspect||0.95;
     const h=cssH*dpr, w=h*asp; if(!jelly.restx) jelly.place(w,h); else jelly.resize(w,h);
@@ -43,10 +47,12 @@
   function spawn(txt,cls,x,y){ const el=document.createElement('div'); el.className=cls; el.textContent=txt; el.style.left=x+'px'; el.style.top=y+'px'; fx.appendChild(el); setTimeout(()=>el.remove(),1900); }
   function petScreenCss(){ return {x:pet.x+pet.size/2, y:pet.y+pet.size*0.2}; }
   function hearts(){ const p=petScreenCss(); spawn('❤','heart',p.x,p.y-10); setTimeout(()=>spawn('❤','heart',p.x+14,p.y),130); }
+  function phaseFx(){ glc.style.transition=faceSvg.style.transition='opacity .45s ease'; glc.style.opacity=faceSvg.style.opacity='0.12'; setTimeout(()=>{ glc.style.opacity=faceSvg.style.opacity='1'; },650); }
 
   // ---- streams from main ----
-  window.buddy.onState((s)=>{ settings=s.settings||settings; if(settings){ jelly.squish=jiggle(); document.body.classList.toggle('rm',!!settings.reduceMotion); applySize(); } });
-  window.buddy.getState().then((s)=>{ settings=s.settings; if(settings){ jelly.squish=jiggle(); applySize(); } });
+  window.buddy.onState((s)=>{ settings=s.settings||settings; if(settings){ jelly.squish=jiggle(); document.body.classList.toggle('rm',!!settings.reduceMotion); applySize(); }
+    if(s.active&&s.active!==curChar) loadChar(s.active); });
+  window.buddy.getState().then((s)=>{ settings=s.settings; if(settings){ jelly.squish=jiggle(); applySize(); } if(s.active&&s.active!==curChar) loadChar(s.active); });
 
   window.buddy.onPet((p)=>{
     const was=pet.show; pet=p;
@@ -75,6 +81,7 @@
       case 'fed': foodOn=true; foodT=0; food.style.display='block'; food.style.opacity='1'; transient('surprised',750); break;
       case 'grab': jelly.stretch(.35); face.setExpr('happy'); break;
       case 'dizzy': transient('dizzy',1700); break;
+      case 'phase': phaseFx(); break;
       case 'look': face.glance(e.dir); break;
       case 'say': speak(e.kind||'idle'); break;
     } });
@@ -86,7 +93,8 @@
     if(!pet.show){ jelly.clear(); requestAnimationFrame(frame); return; }
     if(['idle','sit'].includes(pet.state)){ idleAcc+=dt; if(idleAcc>2.4){ idleAcc=0; if(!(settings&&settings.reduceMotion)) jelly.squash(.08); } }
     face.idle(dt); face.step(dt); jelly.step(dt);
-    jelly.setOrigin((pet.x+pet.size/2)*dpr, (pet.y+pet.size)*dpr);
+    const bob=floatMode?Math.sin(now/650)*pet.size*0.05:0;
+    jelly.setOrigin((pet.x+pet.size/2)*dpr, (pet.y+pet.size+bob)*dpr);
     jelly.draw(); if(jelly._placed) face.follow(jelly.getBounds());
     if(speechEl.classList.contains('show')){ const b=jelly.getBounds(); speechEl.style.left=((b.minx+b.maxx)/2/dpr)+'px'; speechEl.style.top=(b.miny/dpr-8)+'px'; }
     if(chuteOn){ const cw=pet.size*1.35, chh=cw*1.081, sway=Math.sin(now/420)*7;

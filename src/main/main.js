@@ -82,7 +82,7 @@ function startEngine() {
   // start somewhere sensible on the primary
   const pb = screen.getPrimaryDisplay().workArea;
   engine.pos = { x: pb.x + pb.width * 0.4, y: pb.y + pb.height - engine.size };
-  syncEngineSettings();
+  syncEngineSettings(); syncActiveChar();
 
   setInterval(() => {
     if (overlays.size === 0 || !overlaysVisible()) return;
@@ -114,6 +114,7 @@ function syncEngineSettings() {
   engine.setSettings({ speed: s.speed, personality: s.personality, mischief: s.mischief });
   engine.setSize(s.size || 140);
 }
+function syncActiveChar() { const c = characterById(store.get().active); engine.setMoveType(c && c.move ? c.move : 'walk'); }
 
 // --- window awareness: perch on the active window's top edge -------------
 // Reads the foreground window rect on Windows and feeds the engine a "ledge".
@@ -247,7 +248,7 @@ ipcMain.handle('buddy:unlock', (_e, id) => {
   if (s.sparks < c.cost) return { ok: false, reason: 'poor' };
   store.set({ sparks: +(s.sparks - c.cost).toFixed(3), owned: [...s.owned, id], active: id }); pushState(); return { ok: true };
 });
-ipcMain.handle('buddy:setActive', (_e, id) => { const s = store.get(); if (s.owned.includes(id)) { store.set({ active: id }); pushState(); } return fullState(); });
+ipcMain.handle('buddy:setActive', (_e, id) => { const s = store.get(); if (s.owned.includes(id)) { store.set({ active: id }); syncActiveChar(); pushState(); } return fullState(); });
 ipcMain.handle('buddy:earn', (_e, n) => { const s = store.get(); store.set({ sparks: +(s.sparks + Math.max(0, n || 0)).toFixed(3) }); return store.get().sparks; });
 function feedCost(level) { return 50 * (level + 1); }
 ipcMain.handle('buddy:feed', (_e, id) => {

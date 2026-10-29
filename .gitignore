@@ -4,3 +4,6 @@ out/
 *.log
 .DS_Store
 .env
+
+# /brag video output (generated deliverable + large intermediates, not source)
+brag-output/

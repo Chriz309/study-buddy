@@ -37,7 +37,7 @@
     else { const h=(colorsMap&&colorsMap[curChar])||0; f = h?('hue-rotate('+h+'deg)'):''; }
     glc.style.filter=f; faceSvg.style.filter=f; }
   function applyFacing(){ glc.style.transform = (directional && pet.facing<0) ? 'scaleX(-1)' : ''; }
-  function poseFor(st){ switch(st){ case 'walk': case 'climb': case 'fall': case 'stalk': return 'side'; case 'sleep': return 'lay'; case 'sit': return 'sit'; default: return 'front'; } }
+  function poseFor(st){ switch(st){ case 'walk': case 'climb': case 'fall': return 'side'; case 'sleep': return 'lay'; case 'sit': return 'sit'; default: return 'front'; } }
   function setPose(key){ const cfg=CHARS[curChar]; if(!cfg||!cfg.poses) return;
     const im=poseImgs[curChar+'/'+key]; if(!im || curPose===key) return;
     curPose=key; heightScale=POSE_H[key]||1; jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=false; applySize(); applyColor(); applyFacing(); ready=true; }
@@ -119,33 +119,7 @@
       case 'phase': phaseFx(); break;
       case 'look': face.glance(e.dir); break;
       case 'say': speak(e.kind||'idle'); break;
-      case 'stalk': beginStalk(e.dir); break;
     } });
-
-  // ---- cat "stalk a mouse" antic ----
-  let mouseEl=null, stalk={on:false,phase:'',t:0,dir:1,mx:0,my:0};
-  function ensureMouse(){ if(mouseEl) return mouseEl; mouseEl=document.createElement('div');
-    mouseEl.textContent='🐭'; mouseEl.style.cssText='position:absolute;z-index:13;pointer-events:none;transform:translate(-50%,-50%);transition:none;will-change:left,top,transform';
-    document.body.appendChild(mouseEl); return mouseEl; }
-  function beginStalk(dir){ if(curChar!=='cat') return; stalk.on=true; stalk.phase='creep'; stalk.t=0; stalk.dir=(dir||pet.facing)||1;
-    const m=ensureMouse(); m.style.display='block'; m.style.fontSize=Math.max(14,pet.size*0.32)+'px';
-    stalk.mx=pet.x+pet.size/2 + stalk.dir*pet.size*0.62; stalk.my=pet.y+pet.size*0.92; }
-  function endStalk(){ stalk.on=false; if(mouseEl) mouseEl.style.display='none'; }
-  function updateStalk(dt,now){ if(!stalk.on||curChar!=='cat'){ return; } stalk.t+=dt; const m=mouseEl; if(!m) return;
-    if(stalk.phase==='creep'){
-      // cat hunkers low, tiny tense wiggle; mouse nibbles ahead and twitches
-      if(Math.random()<0.04) jelly.squash(.06);
-      stalk.mx += Math.sin(now/120)*0.4;
-      const jx=Math.sin(now/90)*2, jy=Math.cos(now/70)*1.5;
-      m.style.left=(stalk.mx+jx)+'px'; m.style.top=(stalk.my+jy)+'px';
-      m.style.transform='translate(-50%,-50%) scaleX('+(stalk.dir<0?1:-1)+')';
-      if(stalk.t>1.5){ stalk.phase='pounce'; stalk.t=0; jelly.stretch(.5); transient('surprised',500);
-        const c=petScreenCss(); spawn('✨','heart',stalk.mx,stalk.my-6); }
-    } else if(stalk.phase==='pounce'){
-      // mouse scurries away off the window edge, then vanishes
-      stalk.mx += stalk.dir*pet.size*6*dt; m.style.left=stalk.mx+'px'; m.style.top=(stalk.my+Math.sin(now/40)*3)+'px';
-      if(stalk.t>0.55){ jelly.squash(.25); endStalk(); }
-    } }
 
   // ---- render loop ----
   let last=performance.now();
@@ -162,7 +136,6 @@
       // blink now and then while facing us / sitting (not mid-walk)
       if(!blinking && pet.state!=='sleep' && (curPose==='front'||curPose==='sit')){ blinkT+=dt;
         if(blinkT>blinkWait){ blinkT=0; blinkWait=2.4+Math.random()*3.6; doBlink(); if(Math.random()<0.3) setTimeout(doBlink,230); } }
-      updateStalk(dt,now);
     }
     if(vectorFace){ face.idle(dt); face.step(dt); } jelly.step(dt);
     const bob=floatMode?Math.sin(now/650)*pet.size*0.05:0;

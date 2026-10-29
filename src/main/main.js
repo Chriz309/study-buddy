@@ -156,7 +156,7 @@ function syncEngineSettings() {
   engine.setSettings({ speed: s.speed, personality: s.personality, mischief: s.mischief, stayPut: !!s.stayPut });
   engine.setSize(s.size || 140);
 }
-function syncActiveChar() { const c = characterById(store.get().active); engine.setMoveType(c && c.move ? c.move : 'walk'); }
+function syncActiveChar() { const c = characterById(store.get().active); engine.setMoveType(c && c.move ? c.move : 'walk'); engine.setGait(c && c.gait ? c.gait : 'hop'); }
 
 // --- window awareness: perch on the active window's top edge -------------
 // Reads the foreground window rect on Windows and feeds the engine a "ledge".

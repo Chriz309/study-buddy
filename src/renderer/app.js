@@ -7,9 +7,14 @@
   if(window.PARACHUTE_ART) chute.src=window.PARACHUTE_ART;
   if(window.FOOD_ART) food.src=window.FOOD_ART;
   let chuteOn=false, foodT=0, foodOn=false;
-  const CHARS={ blob:{art:window.BLOB_ART, float:false, swirl:false}, ghost:{art:window.GHOST_ART, float:true, swirl:true} };
+  const CHARS={
+    blob:  {art:window.BLOB_ART,  float:false, swirl:false, vectorFace:true},
+    ghost: {art:window.GHOST_ART, float:true,  swirl:true,  vectorFace:true},
+    cat:   {poses:(window.CAT_ART||{}), float:false, swirl:false, vectorFace:false, directional:true},
+  };
   let dpr=Math.max(1,window.devicePixelRatio||1);
-  let jelly, face, settings=null, ready=false, curChar='blob', floatMode=false, images={};
+  let jelly, face, settings=null, ready=false, curChar='blob', floatMode=false, images={}, poseImgs={};
+  let vectorFace=true, directional=false, curPose=null;
   let pet={show:false,x:0,y:0,size:140,state:'idle',facing:1};
   let disp={x:0,y:0}, lastState='idle', dragging=false, speechTimer=0, zzzTimer=0, idleAcc=0, lastSize=0;
 
@@ -23,8 +28,19 @@
   face=new Face(faceSvg); face.setExpr('neutral');
   let colorsMap={};
   function applyColor(){ const h=(colorsMap&&colorsMap[curChar])||0; const f=h?('hue-rotate('+h+'deg)'):''; glc.style.filter=f; faceSvg.style.filter=f; }
+  function applyFacing(){ glc.style.transform = (directional && pet.facing<0) ? 'scaleX(-1)' : ''; }
+  function poseFor(st){ switch(st){ case 'walk': case 'climb': case 'fall': return 'side'; case 'sleep': return 'lay'; case 'sit': return 'sit'; default: return 'front'; } }
+  function setPose(key){ const cfg=CHARS[curChar]; if(!cfg||!cfg.poses) return;
+    const im=poseImgs[curChar+'/'+key]; if(!im || curPose===key) return;
+    curPose=key; jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=false; applySize(); applyColor(); applyFacing(); ready=true; }
   function loadChar(id){ const cfg=CHARS[id]||CHARS.blob;
-    const apply=(im)=>{ jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=!!cfg.swirl; floatMode=!!cfg.float; curChar=id; applySize(); applyColor(); ready=true; };
+    floatMode=!!cfg.float; directional=!!cfg.directional; vectorFace=cfg.vectorFace!==false; curChar=id; curPose=null;
+    faceSvg.style.display = (vectorFace && pet.show) ? '' : 'none';
+    if(cfg.poses){ const keys=Object.keys(cfg.poses); let n=0;           // multi-pose character (cat): preload all, show default
+      keys.forEach(k=>{ const key=id+'/'+k; const done=()=>{ if(++n===keys.length) setPose(poseFor(pet.state)); };
+        if(poseImgs[key]){ done(); return; } const im=new Image(); im.onload=()=>{ poseImgs[key]=im; done(); }; im.src=cfg.poses[k]; });
+      return; }
+    const apply=(im)=>{ jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=!!cfg.swirl; applySize(); applyColor(); applyFacing(); ready=true; };
     if(images[id]){ apply(images[id]); return; }
     const im=new Image(); im.onload=()=>{ images[id]=im; apply(im); };
     im.src=cfg.art||('art/'+(id==='ghost'?'ghost-body.png':'blob-body.png')); }
@@ -60,11 +76,12 @@
   window.buddy.getState().then((s)=>{ settings=s.settings; colorsMap=s.colors||colorsMap; if(settings){ jelly.squish=jiggle(); applySize(); } if(s.active&&s.active!==curChar) loadChar(s.active); else applyColor(); });
 
   window.buddy.onPet((p)=>{
-    const was=pet.show; pet=p;
+    const was=pet.show, prevFacing=pet.facing; pet=p;
     if(p.show){ if(p.size!==lastSize) applySize();
-      if(p.state!==lastState){ onStateChange(p.state); lastState=p.state; }
-      face.setWalking(p.state==='walk'); face.setBack(p.state==='climb');
-      if(!was){ faceSvg.style.display=''; }
+      if(p.state!==lastState){ onStateChange(p.state); if(CHARS[curChar]&&CHARS[curChar].poses) setPose(poseFor(p.state)); lastState=p.state; }
+      if(p.facing!==prevFacing) applyFacing();
+      if(vectorFace){ face.setWalking(p.state==='walk'); face.setBack(p.state==='climb'); }
+      if(!was){ faceSvg.style.display = vectorFace ? '' : 'none'; applyFacing(); }
     } else if(was){ faceSvg.style.display='none'; clearInterval(zzzTimer); }
   });
   function onStateChange(st){ clearInterval(zzzTimer);
@@ -97,10 +114,10 @@
     if(!ready){ requestAnimationFrame(frame); return; }
     if(!pet.show){ jelly.clear(); requestAnimationFrame(frame); return; }
     if(['idle','sit'].includes(pet.state)){ idleAcc+=dt; if(idleAcc>2.4){ idleAcc=0; if(!(settings&&settings.reduceMotion)) jelly.squash(.08); } }
-    face.idle(dt); face.step(dt); jelly.step(dt);
+    if(vectorFace){ face.idle(dt); face.step(dt); } jelly.step(dt);
     const bob=floatMode?Math.sin(now/650)*pet.size*0.05:0;
     jelly.setOrigin((pet.x+pet.size/2)*dpr, (pet.y+pet.size+bob)*dpr);
-    jelly.draw(); if(jelly._placed) face.follow(jelly.getBounds());
+    jelly.draw(); if(vectorFace && jelly._placed) face.follow(jelly.getBounds());
     if(speechEl.classList.contains('show')){ const b=jelly.getBounds(); speechEl.style.left=((b.minx+b.maxx)/2/dpr)+'px'; speechEl.style.top=(b.miny/dpr-8)+'px'; }
     if(chuteOn){ const cw=pet.size*1.35, chh=cw*1.081, sway=Math.sin(now/420)*7;
       chute.style.width=cw+'px'; chute.style.left=(pet.x+pet.size/2-cw/2+sway)+'px'; chute.style.top=(pet.y-chh+pet.size*0.18)+'px'; }

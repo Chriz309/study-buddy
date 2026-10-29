@@ -5,7 +5,7 @@
 const CURRENCY = { name: 'Sparks', symbol: '⚡' }; // ⚡
 // DEV-ONLY testing tools (bonus Sparks + sell buddy). MUST be false for public
 // releases — set to false in the commit that merges dev -> main. (search: DEV_TOOLS)
-const DEV_TOOLS = false;
+const DEV_TOOLS = true;
 // Cost of one gumball-machine roll (random unowned buddy). Deliberately steep:
 // base earn is 1 Spark/sec (+0.4/sec per extra owned buddy, +0.1/sec per feed
 // level), so at ~8 h/day of the app running this is roughly a week's earnings —
@@ -23,6 +23,7 @@ const GUMBALL_COST = 300000;
 const CHARACTERS = [
   { id: 'blob',  name: 'Blob', tier: 1, move: 'walk',  rarity: 'common',   cost: 0,   personality: 'sunny', blurb: 'A cheerful little slime. Squishy, glossy, alive.', implemented: true },
   { id: 'ghost', name: 'Boo',  tier: 1, move: 'float', rarity: 'uncommon', cost: 600, personality: 'shy',   blurb: 'A bashful ghost — floats, swirls, and phases in and out.', implemented: true },
+  { id: 'cat',   name: 'Pib',  tier: 1, move: 'walk',  gait: 'step', rarity: 'rare', cost: 900, personality: 'playful', blurb: 'A cozy orange tabby — strolls about, sits to watch, and curls up for naps.', implemented: true },
 ];
 
 const RARITIES = {

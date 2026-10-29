@@ -7,7 +7,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sign=(v)=>v<0?-1:1;
 
 const Engine = {
-  hooks:{}, size:140, baseSpeed:80, moveType:'walk',
+  hooks:{}, size:140, baseSpeed:80, moveType:'walk', gait:'hop',
   pos:{x:300,y:200}, vel:{x:0,y:0}, facing:1,
   state:'idle', stateUntil:0, nextDecision:0, lastChange:0, target:null,
   onFloor:false, dragging:false, parachute:false, _chuteRolled:false, _wrapping:false, recent:[], cursor:{x:0,y:0},
@@ -22,11 +22,18 @@ const Engine = {
     for(const d of displays){ const b=d.bounds; minX=Math.min(minX,b.x); minY=Math.min(minY,b.y); maxX=Math.max(maxX,b.x+b.width); maxY=Math.max(maxY,b.y+b.height); }
     this.world={ x0:minX,y0:minY,x1:maxX,y1:maxY,
       floors: displays.map(d=>({x0:d.workArea.x, x1:d.workArea.x+d.workArea.width, y:d.workArea.y+d.workArea.height})) };
+    // real monitor rects, so floating pets pick targets ON a screen (not in gaps between monitors)
+    this.screens = displays.map(d=>({x0:d.bounds.x, y0:d.bounds.y, x1:d.bounds.x+d.bounds.width, y1:d.bounds.y+d.bounds.height}));
     if(!isFinite(this.pos.x)) this.pos.x=(minX+maxX)/2;
     this.pos.x=clamp(this.pos.x,this.world.x0,this.world.x1-this.size);
     this.pos.y=clamp(this.pos.y,this.world.y0,this.world.y1-this.size);
   },
   setSize(px){ this.size=px; },
+  setGait(g){ this.gait=g||'hop'; },   // 'hop' = slimes bounce; 'step' = cats walk smoothly
+  // a random point on an ACTUAL monitor (upper area), for floating pets
+  _floatPoint(){ const S=(this.screens&&this.screens.length)?this.screens[(Math.random()*this.screens.length)|0]
+      :{x0:this.world.x0,y0:this.world.y0,x1:this.world.x1,y1:this.world.y1};
+    return { x:rnd(S.x0+40,S.x1-40), y:rnd(S.y0+40, S.y0+(S.y1-S.y0)*0.62) }; },
   setMoveType(t){ if(t&&t!==this.moveType){ this.moveType=t; this.target=null; this._wantClimb=this._peeking=false; this._climbStopY=null; this._wrapping=false; this.onFloor=(t!=='float'); this.setState('idle',300); } },
   setSettings(s){ Object.assign(this.settings,s);
     if(s&&s.stayPut){ this.target=null; this._wantClimb=this._peeking=false; this._wrapping=false; }  // settle where it is
@@ -72,6 +79,7 @@ const Engine = {
     if(per==='sleepy'){w.sleep+=2.5;w.sit+=2;w.walk-=1.2;}
     if(per==='naughty'){w.climb+=1.3;w.peek+=1;w.jump+=1;}
     if(per==='chill'){w.idle+=1;w.sit+=.6;}
+    if(this.gait==='step'){ w.climb=0; w.peek=0; w.toWindow=0; w.bounce=0; }  // cats don't wall-climb or slime-bounce
     for(const k of this.recent) if(w[k]!=null) w[k]*=0.35;
     const keys=Object.keys(w); let sum=keys.reduce((a,k)=>a+Math.max(0,w[k]),0), r=Math.random()*sum, ch='idle';
     for(const k of keys){ r-=Math.max(0,w[k]); if(r<=0){ch=k;break;} }
@@ -122,6 +130,8 @@ const Engine = {
       if(Math.abs(d)<this.size*0.35){ this.pos.x=this.target; this.target=null;
         if(this._peeking){ this._peeking=false; this.hooks.event&&this.hooks.event('look'); this.setState('idle',rnd(900,1800)); }
         else if(!this._wantClimb) this.setState('idle',rnd(400,1200)); }
+      else if(this.gait==='step'){ // cats walk smoothly along the floor instead of hopping
+        this.facing=sign(d); this.pos.x+=this.facing*spd*1.6*dt; }
       else if(now>=(this._nextHop||0)){ // slimes hop, they don't walk
         this.facing=sign(d); this.vel.y=-rnd(230,320)*(0.9+0.3*hp); this.vel.x=this.facing*rnd(120,185)*(0.7+0.5*hp);
         this.onFloor=false; this.hooks.event&&this.hooks.event('hop'); } }
@@ -145,12 +155,13 @@ const Engine = {
   stepFloat(dt,now){ const W0=this.world.x0,W1=this.world.x1,H0=this.world.y0,H1=this.world.y1;
     if(this.state==='drag'){ return; }
     if(this.state!=='sleep'){
-      if(!this.target||typeof this.target!=='object') this.target={x:rnd(W0+40,W1-40),y:rnd(H0+40,H0+(H1-H0)*0.62)};
+      if(!this.target||typeof this.target!=='object') this.target = this.settings.stayPut
+        ? {x:this.pos.x+this.size/2, y:this.pos.y+this.size/2} : this._floatPoint();
       const slow=this._wrapping?1.05:0.6;                              // ghost drifts gently (was too fast)
       const tx=this.target.x-this.size/2, ty=this.target.y-this.size/2, e=Math.min(1,dt*slow*(this.settings.speed||1));
       this.pos.x+=(tx-this.pos.x)*e; this.pos.y+=(ty-this.pos.y)*e;
-      // always shy away from the cursor — the ghost is skittish
-      if(this.cursor&&isFinite(this.cursor.x)){ const cx=this.pos.x+this.size/2, cy=this.pos.y+this.size/2;
+      // shy away from the cursor — but NOT when told to stay put
+      if(!this.settings.stayPut && this.cursor&&isFinite(this.cursor.x)){ const cx=this.pos.x+this.size/2, cy=this.pos.y+this.size/2;
         const dx=cx-this.cursor.x, dy=cy-this.cursor.y, d=Math.hypot(dx,dy), R=175+this.size*0.6;
         if(d<R && d>0.1){ const push=(1-d/R)*300*dt; this.pos.x+=dx/d*push; this.pos.y+=dy/d*push;
           if(!this._wrapping) this.target={x:clamp(cx+dx/d*320,W0+20,W1-20),y:clamp(cy+dy/d*220,H0+20,H0+(H1-H0)*0.78)}; } }
@@ -173,7 +184,7 @@ const Engine = {
     else if(r<0.30){ this.hooks.event&&this.hooks.event('phase'); this.setState('idle',0); }      // phase out/in
     else if(r<0.44){ const goRight=this.pos.x<(W0+W1)/2; this._wrapping=true;                       // vanish through a wall, emerge opposite
       this.target={x:goRight?W1+this.size*1.6:W0-this.size*1.6, y:clamp(this.pos.y+this.size/2,H0+30,H0+(H1-H0)*0.7)}; this.setState('idle',0); }
-    else { this._wrapping=false; this.target={x:rnd(W0+40,W1-40),y:rnd(H0+40,H0+(H1-H0)*0.62)}; if(Math.random()<.35)this.hooks.event&&this.hooks.event('say',{kind:'idle'}); this.setState('idle',0); }
+    else { this._wrapping=false; this.target=this._floatPoint(); if(Math.random()<.35)this.hooks.event&&this.hooks.event('say',{kind:'idle'}); this.setState('idle',0); }
     this.nextDecision=now+rnd(2600,4800);
   },
   hitTest(x,y,pad){ pad=(pad==null)?14:pad; return x>=this.pos.x-pad&&x<=this.pos.x+this.size+pad&&y>=this.pos.y-pad&&y<=this.pos.y+this.size+pad; },

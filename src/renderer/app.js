@@ -12,9 +12,14 @@
     ghost: {art:window.GHOST_ART, float:true,  swirl:true,  vectorFace:true},
     cat:   {poses:(window.CAT_ART||{}), float:false, swirl:false, vectorFace:false, directional:true},
   };
+  // per-pose height scale so a lying cat doesn't look bigger than a standing one
+  const POSE_H={ side:1, side2:1, front:1.06, sit:1.06, lay:0.70 };
+  // cat coat colours (the orange art recoloured via filters) — hue-rotate looked broken on it
+  const CAT_COLORS={ ginger:'', grey:'grayscale(1) brightness(1.02)', black:'grayscale(1) brightness(.42) contrast(1.15)', white:'grayscale(1) brightness(1.72) contrast(.82)' };
   let dpr=Math.max(1,window.devicePixelRatio||1);
   let jelly, face, settings=null, ready=false, curChar='blob', floatMode=false, images={}, poseImgs={};
-  let vectorFace=true, directional=false, curPose=null;
+  let vectorFace=true, directional=false, curPose=null, heightScale=1;
+  let walkT=0, walkFrame=0, breatheT=0;
   let pet={show:false,x:0,y:0,size:140,state:'idle',facing:1};
   let disp={x:0,y:0}, lastState='idle', dragging=false, speechTimer=0, zzzTimer=0, idleAcc=0, lastSize=0;
 
@@ -27,12 +32,17 @@
   jelly=new Jelly(glc,{grid:12,squish:1.1,stiffness:135,damp:5.3,coupling:0.3});
   face=new Face(faceSvg); face.setExpr('neutral');
   let colorsMap={};
-  function applyColor(){ const h=(colorsMap&&colorsMap[curChar])||0; const f=h?('hue-rotate('+h+'deg)'):''; glc.style.filter=f; faceSvg.style.filter=f; }
+  function applyColor(){ let f='';
+    if(curChar==='cat'){ f = CAT_COLORS[(colorsMap&&colorsMap.cat)||'ginger'] || ''; }
+    else { const h=(colorsMap&&colorsMap[curChar])||0; f = h?('hue-rotate('+h+'deg)'):''; }
+    glc.style.filter=f; faceSvg.style.filter=f; }
   function applyFacing(){ glc.style.transform = (directional && pet.facing<0) ? 'scaleX(-1)' : ''; }
-  function poseFor(st){ switch(st){ case 'walk': case 'climb': case 'fall': return 'side'; case 'sleep': return 'lay'; case 'sit': return 'sit'; default: return 'front'; } }
+  function poseFor(st){ switch(st){ case 'walk': case 'climb': case 'fall': case 'stalk': return 'side'; case 'sleep': return 'lay'; case 'sit': return 'sit'; default: return 'front'; } }
   function setPose(key){ const cfg=CHARS[curChar]; if(!cfg||!cfg.poses) return;
     const im=poseImgs[curChar+'/'+key]; if(!im || curPose===key) return;
-    curPose=key; jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=false; applySize(); applyColor(); applyFacing(); ready=true; }
+    curPose=key; heightScale=POSE_H[key]||1; jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=false; applySize(); applyColor(); applyFacing(); ready=true; }
+  // lightweight texture swap (same-size walk frames) — keeps the soft-body jiggle
+  function swapTex(key){ const im=poseImgs[curChar+'/'+key]; if(!im||curPose===key) return; curPose=key; jelly.aspect=im.width/im.height; jelly.load(im); }
   function loadChar(id){ const cfg=CHARS[id]||CHARS.blob;
     floatMode=!!cfg.float; directional=!!cfg.directional; vectorFace=cfg.vectorFace!==false; curChar=id; curPose=null;
     faceSvg.style.display = (vectorFace && pet.show) ? '' : 'none';
@@ -40,13 +50,13 @@
       keys.forEach(k=>{ const key=id+'/'+k; const done=()=>{ if(++n===keys.length) setPose(poseFor(pet.state)); };
         if(poseImgs[key]){ done(); return; } const im=new Image(); im.onload=()=>{ poseImgs[key]=im; done(); }; im.src=cfg.poses[k]; });
       return; }
-    const apply=(im)=>{ jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=!!cfg.swirl; applySize(); applyColor(); applyFacing(); ready=true; };
+    const apply=(im)=>{ heightScale=1; jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=!!cfg.swirl; applySize(); applyColor(); applyFacing(); ready=true; };
     if(images[id]){ apply(images[id]); return; }
     const im=new Image(); im.onload=()=>{ images[id]=im; apply(im); };
     im.src=cfg.art||('art/'+(id==='ghost'?'ghost-body.png':'blob-body.png')); }
   loadChar('blob');
 
-  function applySize(){ const cssH=pet.size||(settings&&settings.size)||140; const asp=jelly.aspect||0.95;
+  function applySize(){ const cssH=(pet.size||(settings&&settings.size)||140)*heightScale; const asp=jelly.aspect||0.95;
     const h=cssH*dpr, w=h*asp; if(!jelly.restx) jelly.place(w,h); else jelly.resize(w,h);
     face.setRest(w,h,1/dpr); jelly._placed=true; lastSize=cssH; }
 
@@ -106,7 +116,33 @@
       case 'phase': phaseFx(); break;
       case 'look': face.glance(e.dir); break;
       case 'say': speak(e.kind||'idle'); break;
+      case 'stalk': beginStalk(e.dir); break;
     } });
+
+  // ---- cat "stalk a mouse" antic ----
+  let mouseEl=null, stalk={on:false,phase:'',t:0,dir:1,mx:0,my:0};
+  function ensureMouse(){ if(mouseEl) return mouseEl; mouseEl=document.createElement('div');
+    mouseEl.textContent='🐭'; mouseEl.style.cssText='position:absolute;z-index:13;pointer-events:none;transform:translate(-50%,-50%);transition:none;will-change:left,top,transform';
+    document.body.appendChild(mouseEl); return mouseEl; }
+  function beginStalk(dir){ if(curChar!=='cat') return; stalk.on=true; stalk.phase='creep'; stalk.t=0; stalk.dir=(dir||pet.facing)||1;
+    const m=ensureMouse(); m.style.display='block'; m.style.fontSize=Math.max(14,pet.size*0.32)+'px';
+    stalk.mx=pet.x+pet.size/2 + stalk.dir*pet.size*0.62; stalk.my=pet.y+pet.size*0.92; }
+  function endStalk(){ stalk.on=false; if(mouseEl) mouseEl.style.display='none'; }
+  function updateStalk(dt,now){ if(!stalk.on||curChar!=='cat'){ return; } stalk.t+=dt; const m=mouseEl; if(!m) return;
+    if(stalk.phase==='creep'){
+      // cat hunkers low, tiny tense wiggle; mouse nibbles ahead and twitches
+      if(Math.random()<0.04) jelly.squash(.06);
+      stalk.mx += Math.sin(now/120)*0.4;
+      const jx=Math.sin(now/90)*2, jy=Math.cos(now/70)*1.5;
+      m.style.left=(stalk.mx+jx)+'px'; m.style.top=(stalk.my+jy)+'px';
+      m.style.transform='translate(-50%,-50%) scaleX('+(stalk.dir<0?1:-1)+')';
+      if(stalk.t>1.5){ stalk.phase='pounce'; stalk.t=0; jelly.stretch(.5); transient('surprised',500);
+        const c=petScreenCss(); spawn('✨','heart',stalk.mx,stalk.my-6); }
+    } else if(stalk.phase==='pounce'){
+      // mouse scurries away off the window edge, then vanishes
+      stalk.mx += stalk.dir*pet.size*6*dt; m.style.left=stalk.mx+'px'; m.style.top=(stalk.my+Math.sin(now/40)*3)+'px';
+      if(stalk.t>0.55){ jelly.squash(.25); endStalk(); }
+    } }
 
   // ---- render loop ----
   let last=performance.now();
@@ -114,6 +150,14 @@
     if(!ready){ requestAnimationFrame(frame); return; }
     if(!pet.show){ jelly.clear(); requestAnimationFrame(frame); return; }
     if(['idle','sit'].includes(pet.state)){ idleAcc+=dt; if(idleAcc>2.4){ idleAcc=0; if(!(settings&&settings.reduceMotion)) jelly.squash(.08); } }
+    if(curChar==='cat'){
+      // walk cycle: alternate the two side frames so the legs (and tail) move
+      if(pet.state==='walk'){ walkT+=dt; if(walkT>0.17){ walkT=0; walkFrame^=1; swapTex(walkFrame?'side2':'side'); } }
+      // gentle breathing + the occasional ear-perk so it feels alive at rest
+      if(['idle','sit'].includes(pet.state) && !(settings&&settings.reduceMotion)){ breatheT+=dt;
+        if(breatheT>2.1){ breatheT=0; jelly.squash(Math.random()<0.25?0.07:0.035); } }
+      updateStalk(dt,now);
+    }
     if(vectorFace){ face.idle(dt); face.step(dt); } jelly.step(dt);
     const bob=floatMode?Math.sin(now/650)*pet.size*0.05:0;
     jelly.setOrigin((pet.x+pet.size/2)*dpr, (pet.y+pet.size+bob)*dpr);

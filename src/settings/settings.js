@@ -9,6 +9,7 @@
   // colour presets = hue-rotate degrees applied to the sprite; swatch previews the real tint
   const PALETTE = [0, 45, 90, 140, 190, 250, 300];
   const SWBASE = '#2fa8ff';
+  const CAT_SWATCHES = [{key:'ginger',label:'Ginger',dot:'#f0a04b'},{key:'grey',label:'Grey',dot:'#9aa0a6'},{key:'black',label:'Black',dot:'#3a3a3f'},{key:'white',label:'White',dot:'#eceae4'}];
   let state = null;
   const displayName = (c) => (state.names && state.names[c.id]) || c.name;
   const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -135,9 +136,14 @@
       const afford = state.sparks >= cost;
       const card = document.createElement('div');
       card.className = 'card' + (state.active === c.id ? ' active-c' : '');
-      const curHue = (state.colors && state.colors[c.id]) || 0;
-      const swatches = PALETTE.map(h =>
-        `<button class="sw${h === curHue ? ' on' : ''}" style="background:${SWBASE};filter:hue-rotate(${h}deg)" title="${h === 0 ? 'Original' : 'Tint'}" data-col="${c.id}" data-hue="${h}"></button>`).join('');
+      let swatches;
+      if (c.id === 'cat') { const cur = (state.colors && state.colors[c.id]) || 'ginger';
+        swatches = CAT_SWATCHES.map(s =>
+          `<button class="sw${s.key === cur ? ' on' : ''}" style="background:${s.dot}" title="${s.label}" data-col="${c.id}" data-catcol="${s.key}"></button>`).join('');
+      } else { const curHue = (state.colors && state.colors[c.id]) || 0;
+        swatches = PALETTE.map(h =>
+          `<button class="sw${h === curHue ? ' on' : ''}" style="background:${SWBASE};filter:hue-rotate(${h}deg)" title="${h === 0 ? 'Original' : 'Tint'}" data-col="${c.id}" data-hue="${h}"></button>`).join('');
+      }
       card.innerHTML = `
         <div class="pre">${EMOJI[c.id] || '⭐'}</div>
         <input class="nameedit" data-name="${c.id}" value="${esc(displayName(c))}" maxlength="18" spellcheck="false" />
@@ -159,7 +165,8 @@
       inp.addEventListener('change', commit);
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
     });
-    grid.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => window.buddy.setColor(b.dataset.col, +b.dataset.hue)));
+    grid.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () =>
+      window.buddy.setColor(b.dataset.col, b.dataset.catcol !== undefined ? b.dataset.catcol : +b.dataset.hue)));
     grid.querySelectorAll('[data-sell]').forEach(b => b.addEventListener('click', () => window.buddy.devSell(b.dataset.sell)));
   }
 

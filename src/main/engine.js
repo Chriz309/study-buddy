@@ -61,7 +61,8 @@ const Engine = {
     this.onFloor=false; this.vel.x=clamp(this.vel.x,-1400,1400); this.vel.y=clamp(this.vel.y,-1400,1400); this.setState('fall',1e9);
     if(Math.hypot(this.vel.x,this.vel.y)>950) this.hooks.event&&this.hooks.event('dizzy');
     this._maybeParachute(); this._chuteRolled=true; },   // one roll per throw (don't also roll the self-fall chance)
-  _maybeParachute(){ const drop=this.floorAt(this.pos.x)-this.pos.y; if(!this.parachute && drop>150 && Math.random()<0.4){ this.parachute=true; if(this.vel.y>120)this.vel.y=120; this.hooks.event&&this.hooks.event('parachuteOpen'); } },
+  _maybeParachute(){ if(this.gait==='step') return;   // cats land on their feet — no parachute
+    const drop=this.floorAt(this.pos.x)-this.pos.y; if(!this.parachute && drop>150 && Math.random()<0.4){ this.parachute=true; if(this.vel.y>120)this.vel.y=120; this.hooks.event&&this.hooks.event('parachuteOpen'); } },
   petted(){ this.hooks.event&&this.hooks.event('pet'); },
   nap(){ this.setState('sleep',rnd(7000,15000)); this.hooks.event&&this.hooks.event('say',{kind:'sleep'}); },
 
@@ -79,7 +80,7 @@ const Engine = {
     if(per==='sleepy'){w.sleep+=2.5;w.sit+=2;w.walk-=1.2;}
     if(per==='naughty'){w.climb+=1.3;w.peek+=1;w.jump+=1;}
     if(per==='chill'){w.idle+=1;w.sit+=.6;}
-    if(this.gait==='step'){ w.climb=0; w.peek=0; w.toWindow=0; w.bounce=0; }  // cats don't wall-climb or slime-bounce
+    if(this.gait==='step'){ w.climb=0; w.peek=0; w.toWindow=0; w.bounce=0; w.stalk=2.0; }  // cats: no slime antics; they stalk a mouse instead
     for(const k of this.recent) if(w[k]!=null) w[k]*=0.35;
     const keys=Object.keys(w); let sum=keys.reduce((a,k)=>a+Math.max(0,w[k]),0), r=Math.random()*sum, ch='idle';
     for(const k of keys){ r-=Math.max(0,w[k]); if(r<=0){ch=k;break;} }
@@ -102,6 +103,7 @@ const Engine = {
       case 'peek': this.peek(); break;
       case 'look': { const dir=(this.cursor&&isFinite(this.cursor.x))?sign(this.cursor.x-(this.pos.x+this.size/2)):0; this.hooks.event&&this.hooks.event('look',{dir}); this.setState('idle',rnd(900,1600)); break; }
       case 'say': this.hooks.event&&this.hooks.event('say',{kind:Math.random()<.4?'study':'idle'}); this.setState('idle',1600); break;
+      case 'stalk': { this.target=null; this.setState('stalk',2600); this.hooks.event&&this.hooks.event('stalk',{dir:this.facing}); break; }
     } },
   climbWall(){ const toLeft=this.pos.x<(this.world.x0+this.world.x1)/2; this.climbEdge=toLeft?this.world.x0:this.world.x1-this.size;
     this.target=this.climbEdge; this.setState('walk',1e9); this._wantClimb=true; },
@@ -138,7 +140,7 @@ const Engine = {
     const fy=this.floorAt(this.pos.x);
     if(this.pos.y<fy||this.vel.y<0){
       // chance to pop a parachute on a big fall the pet caused itself (not just throws)
-      if(!this.parachute && !this._chuteRolled && this.vel.y>60 && (fy-this.pos.y)>220){ this._chuteRolled=true;
+      if(this.gait!=='step' && !this.parachute && !this._chuteRolled && this.vel.y>60 && (fy-this.pos.y)>220){ this._chuteRolled=true;
         if(Math.random()<0.35){ this.parachute=true; if(this.vel.y>120)this.vel.y=120; this.hooks.event&&this.hooks.event('parachuteOpen'); } }
       const g=this.parachute?520:2300; this.vel.y+=g*dt;
       if(this.parachute){ if(this.vel.y>150)this.vel.y=150; this.pos.x+=Math.sin(now/480)*22*dt; }
@@ -150,7 +152,7 @@ const Engine = {
       this.pos.y=fy; this.vel.y=0; this.onFloor=true; this._chuteRolled=false; }
     this.pos.x=clamp(this.pos.x,x0,x1-this.size);
     if(now>this.nextDecision&&this.onFloor&&!this._wantClimb&&['idle','sit','walk'].includes(this.state)&&(this.state!=='walk'||this.target==null)) this.decide();
-    if(this.state==='sleep'&&now>this.stateUntil) this.setState('idle',300); },
+    if((this.state==='sleep'||this.state==='stalk')&&now>this.stateUntil) this.setState('idle',300); },
   // --- floating creatures (ghost): drift freely, no gravity/hops/climb ---
   stepFloat(dt,now){ const W0=this.world.x0,W1=this.world.x1,H0=this.world.y0,H1=this.world.y1;
     if(this.state==='drag'){ return; }

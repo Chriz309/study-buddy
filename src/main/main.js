@@ -401,10 +401,12 @@ ipcMain.handle('buddy:rename', (_e, id, name) => {
   const clean = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 18);
   store.set({ names: { ...s.names, [id]: clean } }); pushState(); return fullState();
 });
-ipcMain.handle('buddy:setColor', (_e, id, hue) => {
+ipcMain.handle('buddy:setColor', (_e, id, val) => {
   const s = store.get(); if (!s.owned.includes(id)) return fullState();
-  const h = Math.max(0, Math.min(360, Math.round(Number(hue) || 0)));
-  store.set({ colors: { ...s.colors, [id]: h } }); pushState(); return fullState();
+  // numeric hue (blob/ghost) is clamped; a named coat key (cat: ginger/grey/…) stored as-is
+  let v = val;
+  if (typeof val === 'number' || (typeof val === 'string' && /^\d+$/.test(val))) v = Math.max(0, Math.min(360, Math.round(Number(val))));
+  store.set({ colors: { ...s.colors, [id]: v } }); pushState(); return fullState();
 });
 ipcMain.handle('buddy:earn', (_e, n) => { const s = store.get(); store.set({ sparks: +(s.sparks + Math.max(0, n || 0)).toFixed(3) }); return store.get().sparks; });
 function feedCost(level) { return 50 * (level + 1); }

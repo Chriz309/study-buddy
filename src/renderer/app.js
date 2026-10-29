@@ -19,7 +19,7 @@
   let dpr=Math.max(1,window.devicePixelRatio||1);
   let jelly, face, settings=null, ready=false, curChar='blob', floatMode=false, images={}, poseImgs={};
   let vectorFace=true, directional=false, curPose=null, heightScale=1;
-  let walkT=0, walkFrame=0, breatheT=0;
+  let walkT=0, walkFrame=0, breatheT=0, blinkT=0, blinkWait=3, blinking=false;
   let pet={show:false,x:0,y:0,size:140,state:'idle',facing:1};
   let disp={x:0,y:0}, lastState='idle', dragging=false, speechTimer=0, zzzTimer=0, idleAcc=0, lastSize=0;
 
@@ -43,6 +43,9 @@
     curPose=key; heightScale=POSE_H[key]||1; jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=false; applySize(); applyColor(); applyFacing(); ready=true; }
   // lightweight texture swap (same-size walk frames) — keeps the soft-body jiggle
   function swapTex(key){ const im=poseImgs[curChar+'/'+key]; if(!im||curPose===key) return; curPose=key; jelly.aspect=im.width/im.height; jelly.load(im); }
+  // quick eye-blink: flick to the closed-eye variant of the current pose, then back
+  function doBlink(){ const base=curPose, bk=base+'_blink'; if(!poseImgs[curChar+'/'+bk]) return;
+    blinking=true; swapTex(bk); setTimeout(()=>{ blinking=false; if(curPose===bk) swapTex(base); }, 140); }
   function loadChar(id){ const cfg=CHARS[id]||CHARS.blob;
     floatMode=!!cfg.float; directional=!!cfg.directional; vectorFace=cfg.vectorFace!==false; curChar=id; curPose=null;
     faceSvg.style.display = (vectorFace && pet.show) ? '' : 'none';
@@ -156,6 +159,9 @@
       // gentle breathing + the occasional ear-perk so it feels alive at rest
       if(['idle','sit'].includes(pet.state) && !(settings&&settings.reduceMotion)){ breatheT+=dt;
         if(breatheT>2.1){ breatheT=0; jelly.squash(Math.random()<0.25?0.07:0.035); } }
+      // blink now and then while facing us / sitting (not mid-walk)
+      if(!blinking && pet.state!=='sleep' && (curPose==='front'||curPose==='sit')){ blinkT+=dt;
+        if(blinkT>blinkWait){ blinkT=0; blinkWait=2.4+Math.random()*3.6; doBlink(); if(Math.random()<0.3) setTimeout(doBlink,230); } }
       updateStalk(dt,now);
     }
     if(vectorFace){ face.idle(dt); face.step(dt); } jelly.step(dt);

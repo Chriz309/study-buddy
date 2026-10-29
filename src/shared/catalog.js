@@ -5,7 +5,7 @@
 const CURRENCY = { name: 'Sparks', symbol: '⚡' }; // ⚡
 // DEV-ONLY testing tools (bonus Sparks + sell buddy). MUST be false for public
 // releases — set to false in the commit that merges dev -> main. (search: DEV_TOOLS)
-const DEV_TOOLS = true;
+const DEV_TOOLS = false;
 // Cost of one gumball-machine roll (random unowned buddy). Deliberately steep:
 // base earn is 1 Spark/sec (+0.4/sec per extra owned buddy, +0.1/sec per feed
 // level), so at ~8 h/day of the app running this is roughly a week's earnings —

@@ -13,7 +13,8 @@
     cat:   {poses:(window.CAT_ART||{}), float:false, swirl:false, vectorFace:false, directional:true},
   };
   // per-pose height scale so a lying cat doesn't look bigger than a standing one
-  const POSE_H={ side:1, side2:1, side3:1, side4:1, front:1.06, sit:1.06, lay:0.70 };
+  // heights chosen so the cat's head is the same size in every pose (all frames share one art scale)
+  const POSE_H={ side:1, side2:1, side3:1, side4:1, front:1.052, sit:1.067, lay:0.718 };
   // 4-frame walk cycle: stride → passing → (other) stride → passing
   const WALK=['side','side2','side3','side4'];
   // cat coat colours (the orange art recoloured via filters) — hue-rotate looked broken on it

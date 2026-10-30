@@ -65,6 +65,14 @@ function load() {
     state.version = 3;
     save();
   }
+
+  // migration → v4 (v0.5.2): "Start on login" is now ON by default. Switch it on ONCE
+  // for every existing user; if they turn it off again afterwards, that choice sticks.
+  if (state.version < 4) {
+    state.settings = { ...state.settings, startOnBoot: true };
+    state.version = 4;
+    save();
+  }
   return state;
 }
 

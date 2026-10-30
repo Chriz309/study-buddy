@@ -42,7 +42,7 @@ const PERSONALITIES = ['chill', 'hyper', 'sleepy', 'naughty'];
 const IMPLEMENTED_IDS = CHARACTERS.filter(c => c.implemented).map(c => c.id);
 
 const DEFAULTS = {
-  version: 3,
+  version: 4,
   sparks: 800,                 // a little to play with — enough for a first gumball crank
   active: 'blob',
   owned: ['blob'],             // start with just Blob; everyone else lives in the gumball machine
@@ -59,7 +59,7 @@ const DEFAULTS = {
     sound: false,
     speech: true,
     chatter: 0.6,              // 0..1 how talkative (ghost gets scaled down)
-    startOnBoot: false,
+    startOnBoot: true,   // on by default (v0.5.2+)
     paused: false,
     stayPut: false,            // "naughty corner": stay in place, idle animations only
     reduceMotion: false,

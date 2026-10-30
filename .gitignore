@@ -8,3 +8,4 @@ out/
 # /brag video output (generated deliverable + large intermediates, not source)
 brag-output/
 graphify-out/
+__pycache__/

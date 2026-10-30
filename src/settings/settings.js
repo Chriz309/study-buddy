@@ -233,18 +233,19 @@
       const map = { idle:'', checking:'Checking…', current:'You’re up to date.',
         available:'Downloading update ' + (u.info && u.info.version || '') + '…',
         downloaded:'Update ' + (u.info && u.info.version || '') + ' downloaded — ready to install.',
+        manual:'Study Buddy ' + (u.info && u.info.version || '') + ' is out!',
         error:'Could not check right now.' };
       st.textContent = map[u.status] || '';
       const inst = $('#installUpdate'), chk = $('#checkUpdate');
-      const ready = u.status === 'downloaded';
-      if (inst) inst.style.display = ready ? '' : 'none';
+      const ready = u.status === 'downloaded' || u.status === 'manual';
+      if (inst) { inst.style.display = ready ? '' : 'none'; inst.textContent = u.status === 'manual' ? 'Download update' : 'Restart & update now'; }
       if (chk) chk.style.display = ready ? 'none' : '';
     }
     const hb = $('#ctlHide'); if (hb) { hb.textContent = state.buddyHidden ? '👋 Show' : '🙈 Hide'; hb.title = state.buddyHidden ? 'Show buddy' : 'Hide buddy'; }
   }
   wireCrank();
   $('#checkUpdate').addEventListener('click', () => { window.buddy.checkUpdate(); $('#updateStatus').textContent = 'Checking…'; });
-  $('#installUpdate').addEventListener('click', () => { $('#updateStatus').textContent = 'Restarting to update…'; window.buddy.installUpdate(); });
+  $('#installUpdate').addEventListener('click', () => { $('#updateStatus').textContent = (state && state.update && state.update.status === 'manual') ? 'Opening the download page…' : 'Restarting to update…'; window.buddy.installUpdate(); });
   $('#ctlDrive').addEventListener('click', () => window.buddy.openDrive());
   $('#ctlQuit').addEventListener('click', () => window.buddy.quit());
   $('#ctlHide').addEventListener('click', () => { if (state && state.buddyHidden) window.buddy.showBuddy(); else window.buddy.hideBuddy(); });

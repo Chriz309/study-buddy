@@ -10,6 +10,10 @@ const ASSETS = path.join(__dirname, '..', '..', 'assets');
 const INDEX = path.join(__dirname, '..', 'renderer', 'index.html');
 const isDev = !app.isPackaged;
 const DRIVE_URL = 'https://drive.google.com/drive/folders/1vPoKKqMPH1ZbTRkgT_10apMRS_mb3W7c';
+const IS_MAC = process.platform === 'darwin';
+// macOS can't self-install updates without a paid Apple Developer ID signature,
+// so on Mac we announce the new version and open the download page instead.
+const RELEASES_URL = 'https://github.com/Chriz309/study-buddy/releases/latest';
 
 let petWin = null;          // ONE small sprite-sized window that moves (not a full-screen overlay)
 let settingsWin = null;
@@ -236,7 +240,17 @@ setInterval(() => { const s = store.get(); for (const w of [petWin, settingsWin]
 
 // --- tray ----------------------------------------------------------------
 function buildTray() {
-  const img = nativeImage.createFromPath(path.join(ASSETS, 'tray.png'));
+  let img = nativeImage.createFromPath(path.join(ASSETS, 'tray.png'));
+  if (IS_MAC) {
+    // the menu bar is ~22pt tall: a raw 32px image shows huge. Use 16px @1x + 32px @2x.
+    const small = nativeImage.createFromPath(path.join(ASSETS, 'tray16.png'));
+    if (!small.isEmpty() && !img.isEmpty()) {
+      const mac = nativeImage.createEmpty();
+      mac.addRepresentation({ scaleFactor: 1, buffer: small.toPNG() });
+      mac.addRepresentation({ scaleFactor: 2, buffer: img.toPNG() });
+      img = mac;
+    } else if (!img.isEmpty()) img = img.resize({ width: 16, height: 16 });
+  }
   tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img);
   tray.setToolTip('Study Buddy'); refreshTrayMenu();
   tray.on('click', () => openSettings());
@@ -272,6 +286,7 @@ let updatePopupWin = null;
 
 // Quit everything and let NSIS swap in the new version, then relaunch.
 function installUpdateNow() {
+  if (IS_MAC) { try { closeUpdatePopup(); } catch {} shell.openExternal(RELEASES_URL); return; }
   if (_installing || !_updater) return;
   _installing = true;
   app.isQuiting = true;
@@ -302,8 +317,8 @@ function showUpdatePopup(version) {
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   updatePopupWin.setAlwaysOnTop(true, 'screen-saver');
-  updatePopupWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  updatePopupWin.loadFile(path.join(__dirname, '..', 'settings', 'update-popup.html'), { search: 'v=' + encodeURIComponent(version || '') });
+  updatePopupWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+  updatePopupWin.loadFile(path.join(__dirname, '..', 'settings', 'update-popup.html'), { search: 'v=' + encodeURIComponent(version || '') + (IS_MAC ? '&mac=1' : '') });
   updatePopupWin.once('ready-to-show', () => { updatePopupWin.show(); });
   updatePopupWin.on('closed', () => { updatePopupWin = null; });
 }
@@ -312,10 +327,13 @@ function initUpdates() {
   if (isDev) return; let autoUpdater;
   try { autoUpdater = require('electron-updater').autoUpdater; } catch { return; }
   _updater = autoUpdater;
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;   // also install if the app is simply quit
+  autoUpdater.autoDownload = !IS_MAC;              // Mac: unsigned apps can't self-install
+  autoUpdater.autoInstallOnAppQuit = !IS_MAC;      // also install if the app is simply quit (Windows)
   autoUpdater.on('checking-for-update', () => { update = { status: 'checking', info: null }; pushState(); });
-  autoUpdater.on('update-available', (i) => { update = { status: 'available', info: { version: i.version } }; pushState(); });
+  autoUpdater.on('update-available', (i) => {
+    if (IS_MAC) { update = { status: 'manual', info: { version: i.version } }; pushState(); showUpdatePopup(i.version); return; }
+    update = { status: 'available', info: { version: i.version } }; pushState();
+  });
   autoUpdater.on('update-not-available', () => { update = { status: 'current', info: null }; pushState(); });
   autoUpdater.on('error', (e) => { update = { status: 'error', info: { message: String(e && e.message || e) } }; pushState(); });
   autoUpdater.on('update-downloaded', (i) => {
@@ -376,7 +394,7 @@ function showHatch(id, name, rarity) {
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   hatchWin.setAlwaysOnTop(true, 'screen-saver');
-  hatchWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  hatchWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
   hatchWin.loadFile(path.join(__dirname, '..', 'settings', 'reveal.html'),
     { search: `id=${encodeURIComponent(id)}&name=${encodeURIComponent(name || '')}&rarity=${encodeURIComponent(rarity || '')}` });
   hatchWin.once('ready-to-show', () => hatchWin.show());
@@ -454,4 +472,5 @@ app.on('ready', () => {
   setInterval(pollForeground, 1500);  // window-awareness / fullscreen poll (Windows) — gentler on CPU
 });
 app.on('window-all-closed', () => { /* keep running in tray */ });
+app.on('activate', () => openSettings());   // macOS: clicking the Dock icon opens Shop & Settings
 app.on('before-quit', () => { app.isQuiting = true; store.save(); });

@@ -6,7 +6,7 @@ name: Build & Release
 on:
   push:
     branches: [main, dev]
-    paths: ['src/**', 'assets/**', 'package.json', 'electron-builder.yml']
+    paths: ['src/**', 'assets/**', 'scripts/**', 'package.json', 'electron-builder.yml', '.github/workflows/**']
   workflow_dispatch: {}
 
 jobs:
@@ -45,4 +45,44 @@ jobs:
             dist/*.exe
             dist/*.yml
             dist/*.blockmap
+          if-no-files-found: ignore
+
+  # macOS build. Runs AFTER Windows so it adds its files to the same Release
+  # instead of racing to create a duplicate one.
+  mac:
+    needs: windows
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install --no-audit --no-fund
+
+      - name: Build & publish release (main)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          EP_GH_IGNORE_TIME: 'true'     # allow adding to the release Windows just made
+        run: npx electron-builder --mac --publish always
+
+      - name: Build test app (dev — no release)
+        if: github.ref != 'refs/heads/main'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac --publish never
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: study-buddy-mac
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.yml
           if-no-files-found: ignore

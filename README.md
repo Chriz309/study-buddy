@@ -23,6 +23,22 @@ Then look for the ⚡ icon in your system tray (bottom-right, near the clock) to
 > Windows may show a SmartScreen warning the first time because the app isn’t
 > code-signed yet. Click **More info → Run anyway**.
 
+### Mac
+
+- **`StudyBuddy-x.y.z-mac-arm64.dmg`** — Apple Silicon Macs (M1, M2, M3, M4…).
+- **`StudyBuddy-x.y.z-mac-x64.dmg`** — older Intel Macs.
+  (Not sure? Apple menu → **About This Mac**: “Chip: Apple M…” = arm64, “Processor: Intel” = x64.)
+
+Open the .dmg and drag **Study Buddy** into **Applications**. The first time, macOS
+will say it’s from an unidentified developer because the app isn’t Apple-signed:
+**right-click the app → Open → Open**. (On newer macOS: try to open it once, then
+go to **System Settings → Privacy & Security** and click **Open Anyway**.)
+
+Look for the ⚡ icon in the menu bar (top-right) to open **Shop & Settings**.
+On Mac, new versions show a pop-up with a **Download** button instead of
+installing silently — just drag the new version over the old one in Applications.
+Your Sparks and buddies are kept.
+
 ---
 
 ## What it does
@@ -66,8 +82,8 @@ npm run pack      # quick unpacked build for testing
    git tag v0.1.0
    git push --tags
    ```
-   The GitHub Action builds on a Windows runner and publishes the installer to a
-   Release. Installed copies then update themselves via `electron-updater`.
+   The GitHub Action builds on Windows and macOS runners and publishes the
+   installers to a Release. Installed copies then update themselves via `electron-updater`.
 
 ---
 

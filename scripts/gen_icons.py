@@ -47,7 +47,7 @@ def draw_buddy(size):
     return img
 
 os.makedirs("assets",exist_ok=True)
-big=draw_buddy(256)
+big=draw_buddy(1024)   # macOS needs >= 512x512 for the .icns
 big.save("assets/icon.png")
 draw_buddy(32).save("assets/tray.png")
 draw_buddy(16).save("assets/tray16.png")

@@ -32,12 +32,30 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: Study Buddy
 
+afterPack: scripts/mac-adhoc-sign.js   # no-op except on macOS
+
 mac:
-  icon: assets/icon.png
+  icon: assets/icon.png          # 1024x1024 (macOS needs >= 512)
   category: public.app-category.entertainment
+  identity: null                 # no Apple Developer ID — ad-hoc signed in afterPack
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  # Separate builds: arm64 = Apple Silicon (M1/M2/M3/M4), x64 = older Intel Macs
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip                # needed by the update checker (latest-mac.yml)
+      arch: [arm64, x64]
+  artifactName: "StudyBuddy-${version}-mac-${arch}.${ext}"
+  extendInfo:
+    LSUIElement: false
+    NSHighResolutionCapable: true
+
+dmg:
+  title: "Study Buddy ${version}"
+  contents:
+    - { x: 140, y: 190 }
+    - { x: 400, y: 190, type: link, path: /Applications }
 
 linux:
   icon: assets/icon.png

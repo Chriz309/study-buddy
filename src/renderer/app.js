@@ -13,13 +13,15 @@
     cat:   {poses:(window.CAT_ART||{}), float:false, swirl:false, vectorFace:false, directional:true},
   };
   // per-pose height scale so a lying cat doesn't look bigger than a standing one
-  const POSE_H={ side:1, side2:1, front:1.06, sit:1.06, lay:0.70 };
+  const POSE_H={ side:1, side2:1, side3:1, side4:1, front:1.06, sit:1.06, lay:0.70 };
+  // 4-frame walk cycle: stride → passing → (other) stride → passing
+  const WALK=['side','side2','side3','side4'];
   // cat coat colours (the orange art recoloured via filters) — hue-rotate looked broken on it
   const CAT_COLORS={ ginger:'', grey:'grayscale(1) brightness(1.02)', black:'grayscale(1) brightness(.42) contrast(1.15)', white:'grayscale(1) brightness(1.72) contrast(.82)' };
   let dpr=Math.max(1,window.devicePixelRatio||1);
   let jelly, face, settings=null, ready=false, curChar='blob', floatMode=false, images={}, poseImgs={};
   let vectorFace=true, directional=false, curPose=null, heightScale=1;
-  let walkT=0, walkFrame=0, breatheT=0, blinkT=0, blinkWait=3, blinking=false;
+  let walkDist=0, walkFrame=0, breatheT=0, blinkT=0, blinkWait=3, blinking=false;
   let pet={show:false,x:0,y:0,size:140,state:'idle',facing:1};
   let disp={x:0,y:0}, lastState='idle', dragging=false, speechTimer=0, zzzTimer=0, idleAcc=0, lastSize=0;
 
@@ -128,8 +130,14 @@
     if(!pet.show){ jelly.clear(); requestAnimationFrame(frame); return; }
     if(['idle','sit'].includes(pet.state)){ idleAcc+=dt; if(idleAcc>2.4){ idleAcc=0; if(!(settings&&settings.reduceMotion)) jelly.squash(.08); } }
     if(curChar==='cat'){
-      // walk cycle: alternate the two side frames so the legs (and tail) move
-      if(pet.state==='walk'){ walkT+=dt; if(walkT>0.17){ walkT=0; walkFrame^=1; swapTex(walkFrame?'side2':'side'); } }
+      // walk cycle locked to the distance actually travelled, so the paws plant
+      // instead of sliding: one frame per ~17% of body size moved.
+      if(pet.state==='walk'){
+        const v=Math.abs(pet.vx||0);
+        walkDist += v>1 ? v*dt : pet.size*dt*1.1;            // fallback cadence if speed unknown
+        const step=pet.size*0.17;
+        if(walkDist>=step){ walkDist%=step; walkFrame=(walkFrame+1)%WALK.length; swapTex(WALK[walkFrame]); }
+      } else { walkDist=0; walkFrame=0; }
       // gentle breathing + the occasional ear-perk so it feels alive at rest
       if(['idle','sit'].includes(pet.state) && !(settings&&settings.reduceMotion)){ breatheT+=dt;
         if(breatheT>2.1){ breatheT=0; jelly.squash(Math.random()<0.25?0.07:0.035); } }

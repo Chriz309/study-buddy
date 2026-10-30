@@ -132,8 +132,13 @@ function positionPetWindow() {
     else if (b.x !== x || b.y !== y) petWin.setPosition(x, y);
   } catch (e) { /* transient bad value — skip this frame rather than crash */ }
 }
+let _lastPx = null, _lastPt = 0, _vx = 0;
 function sendPet() {
-  petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, size: engine.size, state: engine.state, facing: engine.facing });
+  // horizontal speed (DIP/s, smoothed) so the renderer can lock the walk cycle to distance
+  const now = Date.now();
+  if (_lastPx != null && now > _lastPt) { const v = (engine.pos.x - _lastPx) / ((now - _lastPt) / 1000); if (Number.isFinite(v)) _vx += (v - _vx) * 0.3; }
+  _lastPx = engine.pos.x; _lastPt = now;
+  petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, size: engine.size, state: engine.state, facing: engine.facing, vx: Math.round(_vx) });
 }
 function setPetInteractive(cur) {
   if (!petWin || petWin.isDestroyed() || !petWin._shown) return;

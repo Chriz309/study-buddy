@@ -1,7 +1,7 @@
 'use strict';
-const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, shell, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, shell, dialog, powerMonitor } = require('electron');
 const path = require('path');
-const { execFile } = require('child_process');
+const fgProbe = require('./fgprobe');   // Windows foreground-window probe (one long-lived PowerShell)
 const store = require('./store');
 const engine = require('./engine');
 const { CHARACTERS, CURRENCY, DEV_TOOLS, GUMBALL_COST, RARITIES, PERSONALITIES, characterById } = require('../shared/catalog');
@@ -20,6 +20,29 @@ let settingsWin = null;
 let tray = null;
 let grabOff = null;         // {dx,dy} cursor offset while dragging
 let update = { status: 'idle', info: null };
+
+// Keep the software WebGL fallback (SwiftShader). Newer Chromium (Electron 32+) no longer
+// falls back automatically when a PC's graphics driver is blocklisted — old laptops, some
+// lab PCs, VMs — which would leave the pet invisible. It's flagged "unsafe" only for
+// untrusted websites; Study Buddy only ever loads its own local pages.
+app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+
+// Software-graphics safety net. If a PC's graphics process can't start (broken driver,
+// remote desktop, some VMs) Electron 31 quietly fell back to software rendering, but
+// newer Electron doesn't — the pet would be invisible. We detect that once after start-up,
+// remember it in a small flag file and relaunch in software mode (and stay in it on that PC).
+const SOFTWARE_GL_FLAG = path.join(app.getPath('userData'), 'use-software-graphics');
+const useSoftwareGL = (() => { try { return require('fs').existsSync(SOFTWARE_GL_FLAG); } catch { return false; } })();
+if (useSoftwareGL) { app.commandLine.appendSwitch('use-gl', 'angle'); app.commandLine.appendSwitch('use-angle', 'swiftshader'); }
+function checkGraphicsOnce() {
+  if (useSoftwareGL) return;
+  let webgl = '';
+  try { webgl = String((app.getGPUFeatureStatus() || {}).webgl || ''); } catch { return; }
+  if (!webgl || webgl.startsWith('enabled')) return;
+  try { require('fs').writeFileSync(SOFTWARE_GL_FLAG, `WebGL was "${webgl}" on ${new Date().toISOString()}\n`); } catch { return; }
+  try { store.saveNow(); } catch {}
+  app.relaunch(); app.exit(0);
+}
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on('second-instance', () => { showBuddy(); openSettings(); });
@@ -54,6 +77,7 @@ function createPetWindow() {
   // show once so the window exists; after this we only fade opacity, never hide()
   petWin.once('ready-to-show', () => { petWin.showInactive(); applyVisibility(); petWin.webContents.send('state', fullState()); });
   petWin.on('closed', () => { petWin = null; });
+  petWin.on('session-end', () => { try { store.saveNow(); } catch {} });   // Windows logoff / shutdown
 }
 // visible unless the user hid it, or a fullscreen app owns the display it's on
 function petShouldShow() { if (userHidden) return false; const d = ownerDisplay(); return !(d && fsDisplays.has(d.id)); }
@@ -105,8 +129,16 @@ function startEngine() {
   engine.pos = { x: pb.x + pb.width * 0.4, y: pb.y + pb.height - engine.size };
   syncEngineSettings(); syncActiveChar();
 
+  let calmSkip = 0;
   setInterval(() => {
     if (!petWin || petWin.isDestroyed()) return;
+    // CPU saver: when the pet is resting (sitting / idle / asleep, not being dragged
+    // or carried along) run this loop at 20fps instead of 60. Anything that moves
+    // — walking, falling, jumping, climbing, dragging — still gets the full 60fps.
+    const calm = !engine.dragging && !grabOff && (engine.state === 'sleep' || engine.state === 'sit' || engine.state === 'idle')
+      && Math.abs(engine.vel.x) < 1 && Math.abs(engine.vel.y) < 1;
+    if (calm && (++calmSkip % 3)) return;
+    if (!calm) calmSkip = 0;
     const now = Date.now();
     const cur = screen.getCursorScreenPoint();
     engine.setCursor({ x: cur.x, y: cur.y });
@@ -170,7 +202,6 @@ function syncActiveChar() { const c = characterById(store.get().active); engine.
 // --- window awareness: perch on the active window's top edge -------------
 // Reads the foreground window rect on Windows and feeds the engine a "ledge".
 // Fails safe: any error/uncertainty -> no ledge -> normal desktop behaviour.
-const PS_FG = 'Add-Type -Namespace Win -Name U -MemberDefinition \'[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern int GetClassName(System.IntPtr h, System.Text.StringBuilder s, int m); public struct RECT { public int left, top, right, bottom; }\' ; $h=[Win.U]::GetForegroundWindow(); $r=New-Object Win.U+RECT; [void][Win.U]::GetWindowRect($h,[ref]$r); $sb=New-Object System.Text.StringBuilder 256; [void][Win.U]::GetClassName($h,$sb,256); Write-Output ("{0},{1},{2},{3}|{4}" -f $r.left,$r.top,$r.right,$r.bottom,$sb.ToString())';
 const SHELL_CLASSES = new Set(['Progman', 'WorkerW', '']);
 let fgBusy = false;
 let fsDisplays = new Set();   // display ids currently covered by a fullscreen app
@@ -181,10 +212,10 @@ function pollForeground() {
     if (fgBusy) return;
     const aware = store.get().settings.windowAware;
     fgBusy = true;
-    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', PS_FG], { timeout: 2500, windowsHide: true }, (err, stdout) => {
+    fgProbe.query((stdout) => {
       fgBusy = false;
       try {
-        if (err || !stdout) { engine.setLedge(null); return; }
+        if (!stdout) { engine.setLedge(null); return; }
         const [rectPart, cls = ''] = stdout.trim().split('|');
         const m = rectPart.split(',').map(Number);
         if (m.length !== 4 || m.some(n => !isFinite(n))) { engine.setLedge(null); return; }
@@ -295,7 +326,7 @@ function installUpdateNow() {
   if (_installing || !_updater) return;
   _installing = true;
   app.isQuiting = true;
-  try { store.save(); } catch {}
+  try { store.saveNow(); } catch {}
   try { closeUpdatePopup(); } catch {}
   try { if (petWin && !petWin.isDestroyed()) petWin.destroy(); } catch {}
   try { if (settingsWin && !settingsWin.isDestroyed()) settingsWin.destroy(); } catch {}
@@ -471,11 +502,14 @@ app.on('ready', () => {
   createPetWindow();
   buildTray();
   initUpdates();
+  // save immediately when the PC sleeps or shuts down (laptops often die asleep)
+  try { for (const ev of ['suspend', 'shutdown', 'lock-screen']) powerMonitor.on(ev, () => { try { store.saveNow(); } catch {} }); } catch {}
   screen.on('display-added', relayout);
   screen.on('display-removed', relayout);
   screen.on('display-metrics-changed', relayout);
-  setInterval(pollForeground, 1500);  // window-awareness / fullscreen poll (Windows) — gentler on CPU
+  setInterval(pollForeground, 1500);
+  setTimeout(checkGraphicsOnce, 6000);   // see "Software-graphics safety net" at the top  // window-awareness / fullscreen poll (Windows) — gentler on CPU
 });
 app.on('window-all-closed', () => { /* keep running in tray */ });
 app.on('activate', () => openSettings());   // macOS: clicking the Dock icon opens Shop & Settings
-app.on('before-quit', () => { app.isQuiting = true; store.save(); });
+app.on('before-quit', () => { app.isQuiting = true; try { fgProbe.stop(); } catch {} store.saveNow(); });

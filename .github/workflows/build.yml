@@ -20,9 +20,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      # no package-lock.json committed, so install (not ci) and no npm cache
-      - run: npm install --no-audit --no-fund
+      # package-lock.json pins every library version, so builds are reproducible
+      - run: npm ci --no-audit --no-fund
 
       # main: publish a public Release (tag v<version>) so installed apps update.
       - name: Build & publish release (main)
@@ -60,8 +61,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
 
       - name: Build & publish release (main)
         if: github.ref == 'refs/heads/main'

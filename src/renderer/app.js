@@ -21,6 +21,7 @@
   let dpr=Math.max(1,window.devicePixelRatio||1);
   let jelly, face, settings=null, ready=false, curChar='blob', floatMode=false, images={}, poseImgs={};
   let vectorFace=true, directional=false, curPose=null, heightScale=1;
+  let boostUntil=0;   // full-rate drawing until this time (after pats/feeds/etc.)
   let walkDist=0, walkFrame=0, breatheT=0, blinkT=0, blinkWait=3, blinking=false;
   let pet={show:false,x:0,y:0,size:140,state:'idle',facing:1};
   let disp={x:0,y:0}, lastState='idle', dragging=false, speechTimer=0, zzzTimer=0, idleAcc=0, lastSize=0;
@@ -93,7 +94,7 @@
   window.buddy.onPet((p)=>{
     const was=pet.show, prevFacing=pet.facing; pet=p;
     if(p.show){ if(p.size!==lastSize) applySize();
-      if(p.state!==lastState){ onStateChange(p.state); if(CHARS[curChar]&&CHARS[curChar].poses) setPose(poseFor(p.state)); lastState=p.state; }
+      if(p.state!==lastState){ boostUntil=performance.now()+1200; onStateChange(p.state); if(CHARS[curChar]&&CHARS[curChar].poses) setPose(poseFor(p.state)); lastState=p.state; }
       if(p.facing!==prevFacing) applyFacing();
       if(vectorFace){ face.setWalking(p.state==='walk'); face.setBack(p.state==='climb'); }
       if(!was){ faceSvg.style.display = vectorFace ? '' : 'none'; applyFacing(); }
@@ -107,7 +108,7 @@
 
   function baseExpr(){ return lastState==='sleep'?'sleepy':lastState==='drag'?'happy':'neutral'; }
   let exprT=0; function transient(e,ms){ face.setExpr(e); clearTimeout(exprT); exprT=setTimeout(()=>{ if(lastState!=='climb') face.setExpr(baseExpr()); }, ms); }
-  window.buddy.onPetEvent((e)=>{ if(!ready) return;
+  window.buddy.onPetEvent((e)=>{ boostUntil=performance.now()+1800; if(!ready) return;
     switch(e.type){
       case 'land': jelly.squash(Math.max(.3,Math.min(.9,(e.vy||400)/900))); transient('surprised',260); break;
       case 'hop': jelly.stretch(.30); break;
@@ -124,10 +125,17 @@
     } });
 
   // ---- render loop ----
-  let last=performance.now();
-  function frame(now){ const dt=Math.min(0.05,(now-last)/1000); last=now;
+  let last=performance.now(), cleared=false, calmAcc=0;
+  function frame(now){ let dt=(now-last)/1000; last=now;
     if(!ready){ requestAnimationFrame(frame); return; }
-    if(!pet.show){ jelly.clear(); requestAnimationFrame(frame); return; }
+    // hidden: clear once, then do nothing until the pet shows again (was a GPU clear every frame)
+    if(!pet.show){ if(!cleared){ jelly.clear(); cleared=true; } requestAnimationFrame(frame); return; }
+    cleared=false;
+    // GPU/CPU saver: while resting (sleeping / sitting / idle, nothing popping up) draw at
+    // ~20fps instead of 60 — the breathing/blink motions are slow, so it looks the same.
+    const calm=now>boostUntil && (pet.state==='sleep'||pet.state==='sit'||pet.state==='idle') && !foodOn && !chuteOn && !speechEl.classList.contains('show') && !blinking;
+    if(calm){ calmAcc+=dt; if(calmAcc<0.048){ requestAnimationFrame(frame); return; } dt=calmAcc; }
+    calmAcc=0; dt=Math.min(0.05,dt);
     if(['idle','sit'].includes(pet.state)){ idleAcc+=dt; if(idleAcc>2.4){ idleAcc=0; if(!(settings&&settings.reduceMotion)) jelly.squash(.08); } }
     if(curChar==='cat'){
       // walk cycle locked to the distance actually travelled, so the paws plant

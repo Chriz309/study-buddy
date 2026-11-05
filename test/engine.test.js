@@ -92,6 +92,7 @@ test('ghost (float) thrown to the edges stays inside the desktop and keeps float
       const wb = geo.worldBounds(layout);
       // (the ghost's wall-dash deliberately re-enters from just outside an edge for a frame)
       run(E, 12000, (e) => assert.ok(e.pos.x > wb.x0 - 2 * SIZE && e.pos.x < wb.x1 + SIZE && e.pos.y > wb.y0 - SIZE && e.pos.y < wb.y1, `${name} ghost lost at ${JSON.stringify(e.pos)}`));
+      run(E, 100, null, 1e6);   // (the final sample can land on the single frame where the ghost re-enters at an edge before it is clamped in)
       assert.ok(geo.visibleFraction(E.pos, SIZE, LAYOUT) >= 0.3 || E._wrapping, `${name} ghost not back on screen ${JSON.stringify(E.pos)} wrapping=${E._wrapping}`);
     }
   }

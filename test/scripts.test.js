@@ -18,6 +18,13 @@ function setup(layout = LAYOUTS.dual, pos) {
   E.tick(1100);
   return { E, log };
 }
+// run until the antic ends (cap ms), then settle 1.5 s with the random brain held off so we look at the antic's own end state
+function runScript(E, cap, probe, from = 1200) {
+  let now = from;
+  for (let t = 0; t < cap && E.script; t += 1000 / 60) { now += 1000 / 60; E.tick(now); if (probe) probe(E, t); }
+  E.nextDecision = 1e12; E.lastChange = now;
+  return run(E, 1500, null, now);
+}
 const start = (E, charId, name, seed = 1) => { const ok = E.startScript(scripts.makeScript(charId, name, rng(seed)), 1200); assert.ok(ok, 'script started'); };
 const evs = (log) => log.events.map(e => e[0]);
 
@@ -43,8 +50,7 @@ test('chase: runs its sequence, faster than a walk, facing the toy, never leaves
     const walk = scripts.walkSpeed(E); let maxSpeed = 0, lastX = E.pos.x, lastT = 0, facingOk = 0, runTicks = 0, toyX = null;
     log.toyHook = null;
     E.hooks.toy = (c) => { log.toy.push(c); if (c.type === 'move' || c.type === 'spawn') toyX = c.x; };
-    run(E, 40000, (e, t) => {
-      if (!e.script) return;   // afterwards the normal brain may roam the whole desktop
+    runScript(E, 40000, (e, t) => {
       assert.ok(e.pos.x >= D.x0 - 0.01 && e.pos.x + SIZE <= D.x1 + 0.01, 'stays on its display horizontally: ' + e.pos.x);
       assert.ok(e.pos.y <= D.y1 && e.pos.y >= D.y0 - 0.01, 'stays on its display vertically');
       if (e.state === 'run') { runTicks++; maxSpeed = Math.max(maxSpeed, Math.abs(e.pos.x - lastX) / (1 / 60)); if (toyX != null && Math.sign(toyX - (e.pos.x + SIZE / 2)) === e.facing) facingOk++; }
@@ -59,7 +65,7 @@ test('chase: runs its sequence, faster than a walk, facing the toy, never leaves
     assert.equal(types[0], 'spawn'); assert.equal(types[types.length - 1], 'end'); assert.equal(types.filter(t => t === 'spawn').length, 1);
     for (const c of log.toy) if (c.type === 'move') assert.ok(c.x > D.x0 - SIZE && c.x < D.x1 + SIZE, 'toy stays near its display');
     assert.ok(['alert', 'run', 'pounce', 'happy', 'sit'].every(s => log.states.has(s)), [...log.states].join());
-    assert.ok(E.onFloor || E.state === 'idle');
+    assert.ok(E.onFloor, 'ends standing on the floor');
   }
 });
 
@@ -123,7 +129,7 @@ for (const name of ['landing', 'patrol', 'powerup']) {
       const D = E.currentDisplay();
       start(E, 'hero', name, seed);
       let minY = Infinity;
-      run(E, 30000, (e) => { if (!e.script) return; minY = Math.min(minY, e.pos.y); assert.ok(e.pos.x >= D.x0 - 0.01 && e.pos.x + SIZE <= D.x1 + 0.01, `${name} x ${e.pos.x}`); assert.ok(Number.isFinite(e.pos.y)); }, 1200);
+      runScript(E, 30000, (e) => { minY = Math.min(minY, e.pos.y); assert.ok(e.pos.x >= D.x0 - 0.01 && e.pos.x + SIZE <= D.x1 + 0.01, `${name} x ${e.pos.x}`); assert.ok(Number.isFinite(e.pos.y)); }, 1200);
       assert.equal(E.script, null, name + ' finished');
       assert.ok(Math.abs(E.pos.y - E.floorAt(E.pos.x)) < 1 || E.state === 'idle', 'back on the floor');
       assert.ok(geo.visibleFraction(E.pos, SIZE, layout) > 0.999, 'visible at the end');
@@ -139,7 +145,7 @@ for (const name of ['landing', 'patrol', 'powerup']) {
 test('patrol really crosses most of the display, in the direction with more room', () => {
   const { E } = setup(LAYOUTS.single, { x: 100, y: 940 });
   const D = E.currentDisplay(); start(E, 'hero', 'patrol', 1);
-  let maxX = 0; run(E, 20000, (e) => { if (e.script) maxX = Math.max(maxX, e.pos.x); }, 1200);
+  let maxX = 0; runScript(E, 20000, (e) => { maxX = Math.max(maxX, e.pos.x); });
   assert.ok(maxX > D.x1 * 0.85, 'reached the far side: ' + maxX);
 });
 

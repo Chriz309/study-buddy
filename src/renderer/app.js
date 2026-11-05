@@ -90,16 +90,12 @@ Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated
 
   function jiggle(){ return settings && typeof settings.jiggle==='number' ? settings.jiggle : 1.1; }
 
-  const LINES={ greet:["Hi! I'm Blob. I live here now.","Blob, reporting for study duty!","ready when you are 💪"],
-    idle:["What are we working on?","You've got this.","Hydrate — that's an order.","*hums quietly*","I counted your tabs. I'm just concerned.",
-          "one more section, then a break?","your future self says thanks.","small steps, big marks.","posture check! sit up 🙂","you're doing better than you think."],
-    pet:["eeee!","again!","boop received ✅","hehe","best human","♥"], sleep:["zzz...","5 more minutes...","recharging..."],
-    study:["Past paper > panic.","A derivative a day keeps the retest away.","do the hard question first.","revise it once more, trust me.",
-           "you pass, I pass. deal?","exams fear the prepared."], fed:["yum!","tasty ✨","more?","nom nom","10/10 snack"] };
+  // per-character speech lines and the shuffle-bag picker live in lines.js (window.SBLines)
+  const linePicker=SBLines.createPicker(Math.random);
   function speak(kind, force){ if(settings&&settings.speech===false&&!force) return;
     let chatter=(settings&&typeof settings.chatter==='number')?settings.chatter:0.6;
     if(!force&&(kind==='idle'||kind==='study')&&Math.random()>chatter) return;
-    const pool=LINES[kind]||LINES.idle; speechEl.textContent=pool[Math.floor(Math.random()*pool.length)];
+    speechEl.textContent=linePicker.pick(curChar, kind, new Date().getHours());
     speechEl.classList.add('show'); face.talk(Math.min(1.6,0.5+speechEl.textContent.length*0.045));
     clearTimeout(speechTimer); speechTimer=setTimeout(()=>speechEl.classList.remove('show'),2400+Math.random()*1200); }
 

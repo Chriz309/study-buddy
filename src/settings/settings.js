@@ -25,9 +25,10 @@
 
   // ---- wallet ----
   function fmt(n) { return Math.floor(n).toLocaleString(); }
+  const affordable = (cost) => !!state && (state.infiniteSparks === true || state.sparks >= cost);
   function paintWallet() {
     if (!state) return;
-    $('#sparks').textContent = fmt(state.sparks);
+    $('#sparks').textContent = state.infiniteSparks ? '∞' : fmt(state.sparks);   // dev builds: Sparks never run out
     $('#rate').textContent = '+' + (state.rate || 1).toFixed(1) + ' / sec';
   }
 
@@ -55,7 +56,7 @@
       desc.textContent = 'You’ve adopted every friend available right now — more are on the way! 🎉';
       if (!res.querySelector('.gm-reveal')) { res.textContent = 'Collection complete'; res.classList.add('none'); }
     } else {
-      crank.disabled = state.sparks < cost;
+      crank.disabled = !affordable(cost);
       desc.textContent = `Crank the handle to adopt a random new buddy you don’t own yet — ${pool.length} still hiding inside.`;
     }
   }
@@ -72,7 +73,7 @@
       if (rolling || crank.disabled) return;
       const pool = state.gumballPool || [];
       if (pool.length === 0) return;
-      if (state.sparks < (state.gumballCost || 500)) { setResult('Not enough ⚡ — keep studying!', true); return; }
+      if (!affordable(state.gumballCost || 500)) { setResult('Not enough ⚡ — keep studying!', true); return; }
       rolling = true; $('#gumball').classList.add('spin'); setResult('…', true);
       let r; try { r = await window.buddy.roll(); } catch { r = null; }
       setTimeout(() => {
@@ -136,7 +137,7 @@
     for (const c of owned) {
       const lvl = (state.levels && state.levels[c.id]) || 0;
       const cost = feedCost(lvl);
-      const afford = state.sparks >= cost;
+      const afford = affordable(cost);
       const card = document.createElement('div');
       card.className = 'card' + (state.active === c.id ? ' active-c' : '');
       let swatches;
@@ -267,7 +268,7 @@
     if (!state) return; state.sparks = n; paintWallet();
     // keep the gumball crank's affordability fresh without a full repaint storm
     const crank = $('#gmCrank'); const pool = state.gumballPool || [];
-    if (crank && !rolling) crank.disabled = pool.length === 0 || state.sparks < (state.gumballCost || 500);
+    if (crank && !rolling) crank.disabled = pool.length === 0 || !affordable(state.gumballCost || 500);
   });
   window.buddy.onState((s) => { state = s; paintAll(); });
   window.buddy.getState().then((s) => { state = s; paintAll(); });

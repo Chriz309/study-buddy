@@ -16,8 +16,9 @@ const devrun = require('./devrun');
 // normal use; it also keeps test runs from registering a login item (see applyLoginItem).
 // Dev mode is ON only for (a) a dedicated dev build (flag baked in at build time, see electron-builder.dev.yml;
 // public builds never have it) or (b) an UNPACKAGED run with STUDYBUDDY_DEV=1. The env var is ignored in any packaged build.
-const DEV_BUILD = !!require('../../package.json').studyBuddyDevBuild;
-const DEV = DEV_BUILD || (!app.isPackaged && process.env.STUDYBUDDY_DEV === '1');
+const DEV_BUILD = require('../../package.json').studyBuddyDevBuild === true;
+const DEV = require('../shared/devmode').isDevMode({ devBuildFlag: DEV_BUILD, isPackaged: app.isPackaged, env: process.env });
+const economy = require('../shared/devmode').createEconomy(DEV);   // dev builds: infinite Sparks
 const TOOLTIP = DEV_BUILD ? 'Study Buddy DEV BUILD' : 'Study Buddy';
 // the dev build keeps its own save/profile and single-instance lock so it can run beside the live app without touching its data
 if (DEV_BUILD) { try { app.setPath('userData', require('path').join(app.getPath('appData'), 'Study Buddy Dev')); } catch {} }
@@ -336,7 +337,7 @@ function fullState() {
   const pool = rollPool(s.owned).map(c => c.id);
   return { ...s, lockedIds: lockedIds(s.owned), catalog: CHARACTERS, currency: CURRENCY, rarities: RARITIES, personalities: PERSONALITIES,
     rate: sparkRate(), gumballCost: gumballCost(), gumballPool: pool, buddyHidden: userHidden,
-    devTools: DEV_TOOLS, update, platform: process.platform, appVersion: app.getVersion() };
+    devTools: DEV_TOOLS, infiniteSparks: economy.infinite, update, platform: process.platform, appVersion: app.getVersion() };
 }
 function pushState() {
   const payload = fullState();
@@ -481,8 +482,8 @@ ipcMain.handle('buddy:unlock', (_e, id) => {
   if (!c || !c.implemented) return { ok: false, reason: 'unavailable' };
   if (s.owned.includes(id)) return { ok: true };
   if (!tierUnlocked(c.tier || 1, s.owned)) return { ok: false, reason: 'locked' };
-  if (s.sparks < c.cost) return { ok: false, reason: 'poor' };
-  store.set({ sparks: +(s.sparks - c.cost).toFixed(3), owned: [...s.owned, id], active: id }); pushState(); return { ok: true };
+  if (!economy.canAfford(s.sparks, c.cost)) return { ok: false, reason: 'poor' };
+  store.set({ sparks: economy.after(s.sparks, c.cost), owned: [...s.owned, id], active: id }); pushState(); return { ok: true };
 });
 // Each buddy you already own makes the next crank 1.6x pricier (rounded to 1k).
 function gumballCost() {
@@ -497,9 +498,9 @@ ipcMain.handle('buddy:roll', () => {
   const pool = rollPool(s.owned);                                            // higher tiers only once the tier below is complete
   if (pool.length === 0) return { ok: false, reason: 'complete' };          // owns everything available
   const cost = gumballCost();
-  if (s.sparks < cost) return { ok: false, reason: 'poor', cost };
+  if (!economy.canAfford(s.sparks, cost)) return { ok: false, reason: 'poor', cost };
   const got = pool[Math.floor(Math.random() * pool.length)];
-  store.set({ sparks: +(s.sparks - cost).toFixed(3), owned: [...s.owned, got.id], active: got.id });
+  store.set({ sparks: economy.after(s.sparks, cost), owned: [...s.owned, got.id], active: got.id });
   syncActiveChar(); pushState();
   showHatch(got.id, got.name, got.rarity);   // egg-hatch reveal on the desktop
   const left = rollPool(store.get().owned).length;
@@ -554,8 +555,8 @@ function feedCost(level) { return 50 * (level + 1); }
 ipcMain.handle('buddy:feed', (_e, id) => {
   const s = store.get(); if (!s.owned.includes(id)) return { ok: false, reason: 'unowned' };
   const cur = (s.levels && s.levels[id]) || 0; const cost = feedCost(cur);
-  if (s.sparks < cost) return { ok: false, reason: 'poor', cost };
-  store.set({ sparks: +(s.sparks - cost).toFixed(3), levels: { ...s.levels, [id]: cur + 1 } }); pushState();
+  if (!economy.canAfford(s.sparks, cost)) return { ok: false, reason: 'poor', cost };
+  store.set({ sparks: economy.after(s.sparks, cost), levels: { ...s.levels, [id]: cur + 1 } }); pushState();
   // tell the pet to react happily
   if (petWin && !petWin.isDestroyed()) petWin.webContents.send('petEvent', { type: 'fed' });
   return { ok: true, level: cur + 1, sparks: store.get().sparks, next: feedCost(cur + 1) };

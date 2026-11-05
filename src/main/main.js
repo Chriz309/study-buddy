@@ -685,7 +685,7 @@ function initMischief() {
     platform: process.platform, now: Date.now, rand: Math.random, log: (...a) => devLog(...a), engine, host: mischiefHost, activity: mischiefActivity,
     settings: () => ({ enabled: mischiefEnabled(), freq: store.get().settings.deskMischiefFreq || 'normal' }),
     flags: () => { const s = store.get().settings; return { userHidden, petShown: !!(petWin && !petWin.isDestroyed() && petWin._shown), paused: !!s.paused, stayPut: !!s.stayPut, reduceMotion: !!s.reduceMotion, fullscreen: fsDisplays.size > 0, locked: mfFlags.locked, suspended: mfFlags.suspended }; },
-    makeProbe: () => createProbe(), char: () => store.get().active, cursor: () => devCursor || screen.getCursorScreenPoint(),
+    holdBrain: (ms) => { engine.nextDecision = Math.max(engine.nextDecision || 0, Date.now() + ms); }, makeProbe: () => createProbe(), char: () => store.get().active, cursor: () => devCursor || screen.getCursorScreenPoint(),
     emit: petEventOut, setFx: (fx) => { engine.mischief = fx; }, sleep: (ms) => new Promise(r => setTimeout(r, ms)),
     spriteBox: () => mlogic.R(engine.pos.x, engine.pos.y - engine.size * 0.3, engine.size, engine.size * 1.3),
     hidePet: (on) => { try { if (petWin && !petWin.isDestroyed()) petWin.setOpacity(on ? 0 : (petWin._shown ? 1 : 0)); } catch {} },
@@ -707,19 +707,19 @@ function stopMischief() {   // tray "Stop mischief": end the current prank right
 }
 function devPrank(id) {
   if (!DEV || !mischief) return;
-  engine.cancelScript('dev'); resetInteraction(); engine.pos.y = engine.floorAt(engine.pos.x); engine.onFloor = true; engine.vel.x = engine.vel.y = 0; engine.setState('idle', 1000);
+  engine.cancelScript('dev'); resetInteraction(); engine.setLedge(null); engine.pos.y = engine.floorAt(engine.pos.x); engine.onFloor = true; engine.vel.x = engine.vel.y = 0; engine.setState('idle', 1000);
   devLog('dev prank', id); return mischief.start({ only: id, force: true });
 }
 // DEV: prove a prank restores the screen. Captures the target area (sprite hidden) before and after, compares in memory, logs the numbers. Nothing is saved.
 async function devVerify(id) {
   if (!DEV || !mischief) return;
-  const wins0 = BrowserWindow.getAllWindows().length, disp = mischiefHost.displays()[0];
-  const grab = async () => { mischief.hidePetForVerify(true); await new Promise(r => setTimeout(r, 120)); const p = await mischiefHost.pixels(disp, disp.bounds); mischief.hidePetForVerify(false); return p; };
+  const wins0 = BrowserWindow.getAllWindows().length, disp = mischiefHost.displays()[0], whole = mlogic.R(disp.bounds.x, disp.bounds.y, disp.bounds.width, disp.bounds.height);
+  const grab = async () => { mischief.hidePetForVerify(true); await new Promise(r => setTimeout(r, 120)); const p = await mischiefHost.pixels(disp, whole); mischief.hidePetForVerify(false); return p; };
   const before = await grab(); const res = await devPrank(id);
   await new Promise(r => setTimeout(r, 2200));   // sprite falls back to the floor
   const after = await grab(), rects = (res && res.rects) || [];
-  const cmp = mlogic.compareRegions(before, after, rects.length ? rects : [disp.bounds], disp);
-  devLog('VERIFY', id, JSON.stringify({ result: res && res.status, reason: res && res.reason, meanDiff: +cmp.mean.toFixed(5), pctChanged: +cmp.pct.toFixed(3), maxChannel: cmp.max, overlaysBefore: wins0, overlaysAfter: BrowserWindow.getAllWindows().length }));
+  const cmp = mlogic.compareRegions(before, after, rects.length ? rects : [whole], disp);
+  devLog('VERIFY', id, JSON.stringify({ dims: [before && before.w, before && before.h, after && after.w, after && after.h, before && before.data && before.data.length], result: res && res.status, reason: res && res.reason, meanDiff: +cmp.mean.toFixed(5), pctChanged: +cmp.pct.toFixed(3), maxChannel: cmp.max, overlaysBefore: wins0, overlaysAfter: BrowserWindow.getAllWindows().length }));
 }
 
 // --- dev helpers (STUDYBUDDY_DEV=1 only) -------------------------------------------------------
@@ -823,7 +823,7 @@ app.on('ready', () => {
   setInterval(runWatchdog, 2500);       // self-healing: off-screen sprite, stuck drag, drifted window, lost click-through/topmost
   scheduleAntic();
   initMischief();
-  if (DEV) startDevRun();
+  if (DEV) { devLog('userData', app.getPath('userData'), 'dev', DEV, 'infiniteSparks', economy.infinite); startDevRun(); }
   setTimeout(checkGraphicsOnce, 6000);   // see "Software-graphics safety net" at the top  // window-awareness / fullscreen poll (Windows) — gentler on CPU
 });
 app.on('window-all-closed', () => { /* keep running in tray */ });

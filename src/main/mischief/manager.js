@@ -46,7 +46,8 @@ function createManager(d) {
     if (d.platform !== 'win32') return { status: 'skipped', reason: 'not-windows' };
     if (!opts.force) { const why = blocked(); if (why) { d.log('mischief skipped: ' + why); return { status: 'skipped', reason: why }; } }
     else if (!d.engine.canStartScript(true)) return { status: 'skipped', reason: 'sprite-busy' };
-    running = true; const t0 = d.now(); let probe = null, result = { status: 'skipped', reason: 'no-target' };
+    running = true; if (d.holdBrain) d.holdBrain(8000);   // the random brain must not walk the sprite off while we look at the desktop
+    const t0 = d.now(); let probe = null, result = { status: 'skipped', reason: 'no-target' };
     try {
       probe = d.makeProbe(); if (!probe.start()) throw new Error('probe did not start');
       const scan = await probe.request('scan', 9000);

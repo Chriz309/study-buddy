@@ -79,6 +79,8 @@ const DEFAULTS = {
     windowAware: true,         // perch on the active window's top edge (Windows)
     showAll: false,            // show every owned pet at once (future multi-pet)
     antics: true,              // now-and-then special antics (cat butterfly chase, Captain Cram's stunts)
+    deskMischief: null,        // desktop mischief (overlay illusions, Windows). null = never chosen: OFF in public builds, ON in dev builds
+    deskMischiefFreq: 'normal',// rare | normal | chaos
   },
 };
 

@@ -224,10 +224,10 @@ const Engine = {
   // A script is { name, maxMs, update(engine,dt,now) -> true when finished, cancel?(engine,reason) }.
   // While one runs the normal brain is suspended. Dragging, rescue, a character swap, stay-put or
   // the window hiding cancel it, and a time cap guarantees it can never get stuck.
-  canStartScript(){ return !this.script && !this.dragging && this.onFloor && !this.settings.stayPut && !this.parachute
+  canStartScript(air){ return !this.script && !this.dragging && (this.onFloor || (air === true && this.moveType === 'float')) && !this.settings.stayPut && !this.parachute
     && (this.state==='idle'||this.state==='sit') && !this.onLedge() && this.displays.length>0; },
   currentDisplay(){ const d=geo.displayForSprite(this.pos,this.size,this.displays)||this.displays[0]; return d?{x0:d.workArea.x,x1:d.workArea.x+d.workArea.width,y0:d.workArea.y,y1:d.workArea.y+d.workArea.height}:{x0:this.world.x0,x1:this.world.x1,y0:this.world.y0,y1:this.world.y1}; },
-  startScript(s,now){ if(!this.canStartScript()) return false;
+  startScript(s,now){ if(!this.canStartScript(s.allowAir === true)) return false;
     this.script=s; this._scriptAt=now==null?this._now:now; this.target=null; this._wantClimb=this._peeking=false; this.vel.x=0; this.vel.y=0;
     try{ s.init&&s.init(this,this._scriptAt); }catch(err){ this.script=null; return false; }
     return true; },

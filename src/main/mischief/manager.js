@@ -11,33 +11,66 @@ const PROBE_MS = 110;          // how often the probe is asked for foreground / 
 const PAD = 8;                 // physical px of surroundings captured around each target (used to build the patch)
 
 function createManager(d) {
-  let running = false, timer = null, chaos = false, recent = [], cur = null, prepAbort = null, forced = false;
+  let running = false, timer = null, timerAt = 0, chaos = false, recent = [], cur = null, prepAbort = null, forced = false, firstDone = false, retriedNoTarget = false;
+  const isChaos = () => chaos || settings().freq === 'chaos';
 
   const settings = () => d.settings();
   const enabled = () => d.platform === 'win32' && !!settings().enabled;
 
-  function blocked() {
+  // Only a sprite in a script, a drag or asleep is "busy"; a merely walking one is settled (target dropped, brain held) so the prank can start.
+  // On chaos a fast cursor does not block: the abort rules still keep it away from the prank's targets.
+  function blocked(settle) {
     const s = settings(), f = d.flags(), e = d.engine;
-    return logic.blockedReason({ platform: d.platform, enabled: !!s.enabled, running, userHidden: f.userHidden, petShown: f.petShown, paused: f.paused, stayPut: f.stayPut, reduceMotion: f.reduceMotion,
-      locked: f.locked, suspended: f.suspended, fullscreen: f.fullscreen, userBusy: d.activity.busy(), petIdle: e.canStartScript(true) && (e.state === 'idle' || e.state === 'sit') });
+    const idleNow = () => e.canStartScript(true) && (e.state === 'idle' || e.state === 'sit');
+    const why = () => logic.blockedReason({ platform: d.platform, enabled: !!s.enabled, running, userHidden: f.userHidden, petShown: f.petShown, paused: f.paused, stayPut: f.stayPut, reduceMotion: f.reduceMotion,
+      locked: f.locked, suspended: f.suspended, fullscreen: f.fullscreen, userBusy: !isChaos() && d.activity.busy(), petIdle: idleNow() });
+    let r = why();
+    if (r === 'sprite-busy' && settle && e.settle && e.settle()) { hold(); r = why(); }
+    return r;
   }
   // ---------------------------------------------------------------- scheduling: ONE timeout, re-armed after each firing
-  function schedule(delay) {
-    clearTimeout(timer); timer = null;
+  // One random roll `u` per cycle: a settings change (refresh) recomputes from the time since the cycle began, so it never pushes a due prank back.
+  let cycleAt = 0, cycleU = 0.5;
+  const totalMs = () => {
+    const c = isChaos(), [fa, fb] = logic.FIRST_CHAOS_MS, [ra, rb] = logic.FREQ[c ? 'chaos' : settings().freq] || logic.FREQ.normal;
+    if (c) return firstDone ? (ra + cycleU * (rb - ra)) * 60000 : fa + cycleU * (fb - fa);
+    const t = (ra + cycleU * (rb - ra)) * 60000; return firstDone ? t : Math.min(t, (60 + cycleU * 60) * 1000);
+  };
+  function arm(delay) {
+    clearTimeout(timer); timer = null; timerAt = 0;
     if (!enabled()) return;
-    timer = setTimeout(onTimer, delay != null ? delay : (chaos ? 45000 : logic.nextDelay(settings().freq, d.rand)));
+    timerAt = d.now() + delay;
+    d.log('prank scheduled in ' + Math.round(delay / 1000) + 's' + (isChaos() ? ' (chaos)' : ''));
+    timer = setTimeout(onTimer, delay);
     if (timer.unref) timer.unref();
   }
+  function schedule(delay) {   // start a new cycle (after a prank, a retry, or at startup)
+    cycleAt = d.now(); cycleU = d.rand();
+    arm(delay != null ? delay : Math.round(totalMs()));
+  }
+  function refresh() {         // settings changed: same cycle, new interval
+    if (!enabled()) { clearTimeout(timer); timer = null; timerAt = 0; return; }
+    if (!timer && !running) return schedule();
+    if (timer) arm(Math.max(2000, Math.round(totalMs() - (d.now() - cycleAt))));
+  }
+  const SOFT = /^(no-target|no-text|target-missing|target-offscreen|other-display)$/;
   async function onTimer() {
-    timer = null;
+    timer = null; timerAt = 0;
+    const c = isChaos(), retry = () => (c ? 5000 + d.rand() * 5000 : 15000 + d.rand() * 20000);
     try {
-      const why = blocked();
-      if (why) { d.log('mischief skipped: ' + why); return schedule(why === 'sprite-busy' || why === 'user-busy' ? 15000 + d.rand() * 20000 : undefined); }
-      await start({});
-    } catch (e) { d.log('mischief error', String(e && e.stack || e)); }
+      let why = blocked(true);
+      // walking / hopping / jumping / climbing is not busy: give it up to 3 s to land and come to rest (the brain is held meanwhile)
+      for (let i = 0; i < 30 && why === 'sprite-busy' && !d.engine.script && !d.engine.dragging && d.engine.state !== 'sleep'; i++) { await d.sleep(100); hold(); why = blocked(true); }
+      if (why) { d.log('prank skipped: ' + why); return schedule(why === 'sprite-busy' || why === 'user-busy' ? retry() : (c ? 20000 + d.rand() * 10000 : undefined)); }
+      let r = await start({});
+      if (r && r.status === 'skipped' && SOFT.test(r.reason || '') && !retriedNoTarget) { retriedNoTarget = true; d.log('prank retry after ' + r.reason); r = await start({}); }   // nothing fit: try another prank at once
+      retriedNoTarget = false; firstDone = true;
+      if (r && r.status === 'skipped' && SOFT.test(r.reason || '') && c) return schedule(20000 + d.rand() * 5000);
+      if (r && r.status === 'skipped' && (r.reason === 'sprite-busy' || r.reason === 'user-busy')) return schedule(retry());
+    } catch (e) { d.log('prank error', String(e && e.stack || e)); retriedNoTarget = false; }
     schedule();
   }
-  const setChaos = (on) => { chaos = !!on; schedule(); };
+  const setChaos = (on) => { chaos = !!on; refresh(); };
 
   const hold = () => { if (d.holdBrain) d.holdBrain(6000); };   // re-armed at every step of the preparation: the random brain must not walk the sprite off
   // checked right before the capture and again right before the overlay opens: stop(), settings, lock, suspend, fullscreen, grab, a sprite that moved
@@ -67,7 +100,7 @@ function createManager(d) {
   async function start(opts = {}) {
     if (running) return { status: 'skipped', reason: 'running' };
     if (d.platform !== 'win32') return { status: 'skipped', reason: 'not-windows' };
-    if (!opts.force) { const why = blocked(); if (why) { d.log('mischief skipped: ' + why); return { status: 'skipped', reason: why }; } }
+    if (!opts.force) { const why = blocked(); if (why) { d.log('prank skipped: ' + why); return { status: 'skipped', reason: why }; } }
     else if (!d.engine.canStartScript(true)) return { status: 'skipped', reason: 'sprite-busy' };
     running = true; prepAbort = null; forced = !!opts.force; hold();
     const t0 = d.now(); let probe = null, result = { status: 'skipped', reason: 'no-target' };
@@ -97,7 +130,7 @@ function createManager(d) {
     finally { if (probe) probe.stop(); running = false; cur = null; }
     result.id = result.id || (opts.only || ''); result.ms = d.now() - t0;
     if (result.status === 'played' && result.id) recent = [result.id, ...recent].slice(0, 4);
-    d.log('mischief ' + result.status + ' ' + (result.id || '-') + (result.reason ? ' (' + result.reason + ')' : '') + ' ' + result.ms + 'ms overlays=' + d.host.count());
+    d.log('prank ' + (result.status === 'played' ? 'played' : 'skipped') + ' ' + (result.id || '-') + (result.reason ? ' (' + result.reason + ')' : '') + ' ' + result.ms + 'ms overlays=' + d.host.count());
     if (d.onResult) d.onResult(result);
     return result;
   }
@@ -197,6 +230,6 @@ function createManager(d) {
 
   const sigOf2 = null;
   function stop(why) { if (cur) { cur.abort(why || 'stopped'); return true; } if (running) { prepAbort = why || 'stopped'; return true; } return false; }
-  return { start, stop, schedule, setChaos, isRunning: () => running, blocked, targets: () => (cur ? cur.near : null), hidePetForVerify: (on) => d.hidePet(on), _zonesOf: zonesOf };
+  return { start, stop, schedule, refresh, setChaos, nextInMs: () => (timerAt ? Math.max(0, timerAt - d.now()) : null), chaosOn: isChaos, isRunning: () => running, blocked, targets: () => (cur ? cur.near : null), hidePetForVerify: (on) => d.hidePet(on), _zonesOf: zonesOf };
 }
 module.exports = { createManager, TICK_MS, PROBE_MS };

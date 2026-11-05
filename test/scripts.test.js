@@ -28,18 +28,35 @@ function runScript(E, cap, probe, from = 1200) {
 const start = (E, charId, name, seed = 1) => { const ok = E.startScript(scripts.makeScript(charId, name, rng(seed)), 1200); assert.ok(ok, 'script started'); };
 const evs = (log) => log.events.map(e => e[0]);
 
-test('nextAnticDelay: cat chase every 10-25 minutes, randomised', () => {
-  const ds = new Set();
-  for (let s = 1; s < 60; s++) { const d = scripts.nextAnticDelay('cat', rng(s)); assert.ok(d >= 10 * 60000 && d <= 25 * 60000, String(d)); ds.add(d); }
-  assert.ok(ds.size > 20, 'varied');
-  assert.equal(scripts.nextAnticDelay('cat', () => 0), 10 * 60000);
-  assert.ok(scripts.nextAnticDelay('cat', () => 0.999999) >= 25 * 60000 - 2);
+test('nextAnticDelay: scales with the Mischief slider (100% 1-2 min, 50% 3-6, 25% 5-12, 0% 20-30)', () => {
+  const want = { 100: [1, 2], 50: [3, 6], 25: [5, 12], 0: [20, 30] };
+  for (const [m, [a, b]] of Object.entries(want)) {
+    const ds = new Set();
+    for (let s = 1; s < 60; s++) { const d = scripts.nextAnticDelay('cat', rng(s), +m); assert.ok(d >= a * 60000 && d <= b * 60000, m + ': ' + d); ds.add(d); }
+    assert.ok(ds.size > 20, 'varied');
+    assert.equal(scripts.nextAnticDelay('cat', () => 0, +m), a * 60000);
+  }
+  assert.equal(scripts.nextAnticDelay('cat', () => 0), 5 * 60000, 'default slider = 25%');
 });
 
-test('makeScript: cat -> chase, hero -> its three stunts, others -> none', () => {
+test('planner: first antic 30-60 s after start/switch; a settings change counts time since the last one and never pushes a due antic back', () => {
+  const pl = scripts.createAnticPlanner(rng(5));
+  pl.reset(0); const d0 = pl.delay(0, 25); assert.ok(d0 >= 30000 && d0 <= 60000, String(d0));
+  assert.equal(pl.delay(20000, 100), d0 - 20000, 'mischief change does not re-roll the first one');
+  pl.fired(100000);
+  const d = pl.delay(100000, 25); assert.ok(d >= 5 * 60000 && d <= 12 * 60000);
+  assert.ok(pl.delay(100000 + 4 * 60000, 100) <= 2000 + 1 && pl.delay(100000 + 4 * 60000, 100) >= 2000, 'raising the slider after 4 min: already due, fires at once');
+  assert.ok(pl.delay(100000 + 30 * 60000, 25) === 2000, 'never pushed back');
+});
+
+test('makeScript: every character has specials; hero favours patrol', () => {
   assert.equal(scripts.makeScript('cat').name, 'chase');
   assert.deepEqual(['landing', 'patrol', 'powerup'].map(n => scripts.makeScript('hero', n).name), ['landing', 'patrol', 'powerup']);
-  assert.equal(scripts.makeScript('blob'), null); assert.equal(scripts.makeScript('ghost'), null);
+  assert.deepEqual(scripts.ANTIC_NAMES.blob, ['wallscale', 'spree']); assert.deepEqual(scripts.ANTIC_NAMES.ghost, ['wallphase', 'swoop']);
+  for (const id of ['blob', 'ghost']) for (const n of scripts.ANTIC_NAMES[id]) assert.equal(scripts.makeScript(id, n).name, n);
+  assert.equal(scripts.makeScript('dragon'), null);
+  const R = rng(3), c = {}; for (let i = 0; i < 400; i++) { const n = scripts.makeScript('hero', null, R).name; c[n] = (c[n] || 0) + 1; }
+  assert.ok(c.patrol > c.landing && c.patrol > c.powerup, JSON.stringify(c));
 });
 
 test('chase: runs its sequence, faster than a walk, facing the toy, never leaves the display, ends clean', () => {

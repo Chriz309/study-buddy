@@ -27,10 +27,14 @@ const economy = require('../shared/devmode').createEconomy(DEV);   // dev builds
 const TOOLTIP = DEV_BUILD ? 'Study Buddy DEV BUILD' : 'Study Buddy';
 // the dev build keeps its own save/profile and single-instance lock so it can run beside the live app without touching its data
 if (DEV_BUILD) { try { app.setPath('userData', require('path').join(app.getPath('appData'), 'Study Buddy Dev')); } catch {} }
-const DEV_LOG = DEV && process.env.STUDYBUDDY_DEV_LOG ? process.env.STUDYBUDDY_DEV_LOG : null;
+// dev builds always log to <userData>/dev.log (ids and reasons only: never screen contents or text); STUDYBUDDY_DEV_LOG overrides the path
+const DEV_LOG = DEV ? (process.env.STUDYBUDDY_DEV_LOG || require('path').join(app.getPath('userData'), 'dev.log')) : null;
+const DEV_LOG_MAX = 200 * 1024; let devLogWrites = 0;
 function devLog(...a) {
   const line = new Date().toISOString() + ' ' + a.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
-  if (DEV_LOG) { try { fs.appendFileSync(DEV_LOG, line + '\n'); } catch {} }
+  if (DEV_LOG) { try {
+    if (devLogWrites++ % 25 === 0) { try { if (fs.statSync(DEV_LOG).size > DEV_LOG_MAX) fs.renameSync(DEV_LOG, DEV_LOG + '.1'); } catch {} }   // rotate at ~200 KB (one previous file kept)
+    fs.appendFileSync(DEV_LOG, line + '\n'); } catch {} }
   if (DEV) console.log(line);
 }
 function logError(where, e) {
@@ -275,7 +279,7 @@ function syncEngineSettings() {
 let _lastActive = null;
 function syncActiveChar() {
   const id = store.get().active, c = characterById(id);
-  if (id !== _lastActive) { engine.cancelScript('char'); _lastActive = id; }
+  if (id !== _lastActive) { engine.cancelScript('char'); _lastActive = id; anticPlanner.reset(Date.now()); devLog('character', id); }
   engine.setMoveType(c && c.move ? c.move : 'walk'); engine.setGait(c && c.gait ? c.gait : 'hop');
   scheduleAntic();
 }
@@ -374,6 +378,13 @@ function buildTray() {
   tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img);
   tray.setToolTip(TOOLTIP); refreshTrayMenu();
   tray.on('click', () => openSettings());
+  if (DEV) tray.on('right-click', () => refreshTrayMenu());   // the dev status line is rebuilt each time the menu opens
+}
+function devStatusLine() {
+  const sec = (ms) => (ms == null ? '-' : '~' + Math.round(ms / 1000) + 's');
+  const pn = mischief && mischiefEnabled() ? mischief.nextInMs() : null;
+  const freq = store.get().settings.deskMischiefFreq || 'normal';
+  return 'next antic ' + sec(anticDueAt ? Math.max(0, anticDueAt - Date.now()) : null) + ' / next prank ' + sec(pn) + ' (' + (mischiefChaos ? 'chaos' : freq) + ')';
 }
 function refreshTrayMenu() {
   if (!tray) return; const s = store.get(); const shown = overlaysVisible();
@@ -388,11 +399,11 @@ function refreshTrayMenu() {
     { type: 'separator' },
     { label: 'About', click: () => openSettings() },
     ...(process.platform === 'win32' ? [{ label: 'Stop mischief', enabled: mischiefEnabled(), click: () => stopMischief() }] : []),
-    ...(DEV ? [{ type: 'separator' }, { label: 'DEV: unlock Captain Cram', click: () => devUnlock('hero') }, { label: 'DEV: unlock Pib (cat)', click: () => devUnlock('cat') },
+    ...(DEV ? [{ type: 'separator' }, { label: devStatusLine(), enabled: false }, { label: 'DEV: unlock Captain Cram', click: () => devUnlock('hero') }, { label: 'DEV: unlock Pib (cat)', click: () => devUnlock('cat') },
       { label: 'DEV: cat chase', click: () => devTrigger('chase') }, { label: 'DEV: hero landing', click: () => devTrigger('landing') },
       { label: 'DEV: hero patrol', click: () => devTrigger('patrol') }, { label: 'DEV: hero power up', click: () => devTrigger('powerup') },
       { label: 'DEV: mischief', submenu: [...Object.keys(MGAGS.G).map(id => ({ label: MGAGS.G[id].label, click: () => devPrank(id) })), { type: 'separator' },
-        { label: 'chaos: a prank every 45 s', type: 'checkbox', checked: mischiefChaos, click: (mi) => { mischiefChaos = mi.checked; if (mischief) mischief.setChaos(mischiefChaos); devLog('mischief chaos', mischiefChaos); } }] }] : []),
+        { label: 'chaos: a prank every 30-90 s', type: 'checkbox', checked: mischiefChaos, click: (mi) => { mischiefChaos = mi.checked; if (mischief) mischief.setChaos(mischiefChaos); devLog('mischief chaos', mischiefChaos); } }] }] : []),
     { label: 'Quit Study Buddy', click: () => { app.isQuiting = true; app.quit(); } },
   ]));
 }
@@ -482,11 +493,12 @@ function initUpdates() {
 
 // --- IPC -----------------------------------------------------------------
 ipcMain.handle('state:get', () => fullState());
-ipcMain.handle('settings:patch', (_e, patch) => {
-  store.set({ settings: patch });
+ipcMain.handle('settings:patch', (_e, patch) => applySettingsPatch(patch));
+function applySettingsPatch(patch) {
+  store.set({ settings: patch }); if (DEV) devLog('settings', Object.keys(patch).map(k => k + '=' + patch[k]).join(' '));
   if ('startOnBoot' in patch) setStartOnBoot(patch.startOnBoot);
-  syncEngineSettings(); pushState(); refreshTrayMenu(); scheduleAntic(); if (mischief) { if (!mischiefEnabled()) mischief.stop('stopped'); mischief.schedule(); } return fullState();
-});
+  syncEngineSettings(); pushState(); refreshTrayMenu(); scheduleAntic(); if (mischief) { if (!mischiefEnabled()) mischief.stop('stopped'); mischief.refresh(); } return fullState();
+}
 ipcMain.handle('buddy:unlock', (_e, id) => {
   const s = store.get(); const c = characterById(id);
   if (!c || !c.implemented) return { ok: false, reason: 'unavailable' };
@@ -641,35 +653,40 @@ function bringBuddyBack() {
 
 // --- antics: the cat's butterfly chase / Captain Cram's stunts ---------------------------------
 // ONE scheduled timeout (re-armed after each firing); nothing runs between antics.
-let anticTimer = null;
+let anticTimer = null, anticDueAt = 0;
+const anticPlanner = scripts.createAnticPlanner(Math.random); anticPlanner.reset(Date.now());
 const anticCharId = () => { const id = store.get().active; return scripts.ANTIC_NAMES[id] ? id : null; };
+// delay undefined: recompute from the time since the last antic (a settings change never pushes a due antic back)
 function scheduleAntic(delay) {
-  clearTimeout(anticTimer); anticTimer = null;
+  clearTimeout(anticTimer); anticTimer = null; anticDueAt = 0;
   const id = anticCharId();
   if (!id || !store.get().settings.antics) return;
-  anticTimer = setTimeout(onAnticTimer, delay == null ? scripts.nextAnticDelay(id) : delay);
+  const d = delay == null ? anticPlanner.delay(Date.now(), store.get().settings.mischief) : delay;
+  anticDueAt = Date.now() + d; anticTimer = setTimeout(onAnticTimer, d); if (DEV) devLog('antic scheduled in ' + Math.round(d / 1000) + 's (' + id + ')');
 }
-// null = OK to play now; otherwise why not
+// null = OK to play now; otherwise why not. A merely walking sprite is settled first; scripts, drags, sleep, jumps and climbs count as busy.
 function anticBlocked() {
   const s = store.get().settings;
   if (!petWin || petWin.isDestroyed() || userHidden || !petWin._shown) return 'hidden';
   if (s.stayPut || s.reduceMotion || s.paused || !s.antics) return 'quiet';
   if (!petShouldShow()) return 'fullscreen';
-  return engine.canStartScript() ? null : 'busy';
+  engine.settle();
+  return engine.canStartScript(true) ? null : 'busy';
 }
 function onAnticTimer() {
-  anticTimer = null;
+  anticTimer = null; anticDueAt = 0;
   try {
     const why = anticBlocked();
-    if (!why) { startAntic(); scheduleAntic(); }
-    else scheduleAntic(why === 'busy' ? 8000 : undefined);        // busy: try again shortly; otherwise wait a full interval
-  } catch (e) { logError('antic timer', e); scheduleAntic(); }
+    if (!why) { const ok = startAntic(); if (ok) anticPlanner.fired(Date.now()); scheduleAntic(ok ? undefined : 5000); }
+    else { if (DEV) devLog('antic skipped: ' + why); scheduleAntic(why === 'busy' ? 1500 : 30000); }   // busy: a settled sprite is a hop from idle; otherwise look again in 30 s
+  } catch (e) { logError('antic timer', e); scheduleAntic(10000); }
 }
 function startAntic(name) {
   const id = anticCharId(); if (!id) return false;
   const sc = scripts.makeScript(id, name); if (!sc) return false;
-  devLog('antic start', id, sc.name);
-  return engine.startScript(sc, Date.now());
+  const ok = engine.startScript(sc, Date.now());
+  devLog('antic ' + (ok ? 'played' : 'skipped') + ' ' + id + ' ' + sc.name + (ok ? '' : ' (not-started)'));
+  return ok;
 }
 
 // --- desktop mischief ----------------------------------------------------------------------------
@@ -768,6 +785,7 @@ function startDevRun() {
         case 'release': engine.release(); grabOff = null; break;
         case 'bringback': bringBuddyBack(); break;
         case 'prank': devPrank(step.arg); break;
+        case 'set': { const [k, v] = (step.arg || '').split('='); if (k) applySettingsPatch({ [k]: /^-?[0-9]+(\.[0-9]+)?$/.test(v) ? +v : v === 'true' ? true : v === 'false' ? false : v }); break; }
         case 'mstop': if (mischief) mischief.stop('stopped'); break;
         case 'mchaos': mischiefChaos = true; if (mischief) mischief.setChaos(true); break;
         case 'mnear': { const r = mischief && mischief.targets(); if (r && r[0]) { devAbortAt = Date.now(); devCursor = { x: Math.round(r[0].x + r[0].w / 2), y: Math.round(r[0].y + r[0].h / 2) }; } break; }

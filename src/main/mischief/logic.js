@@ -97,7 +97,8 @@ function groupLines(rects) {
 }
 
 // ------------------------------------------------------------------ scheduling (one single timeout, never a poll)
-const FREQ = { rare: [25, 60], normal: [7, 18], chaos: [1.5, 4] };   // minutes between pranks
+const FREQ = { rare: [15, 30], normal: [3, 8], chaos: [0.5, 1.5] };   // minutes between prank attempts (chaos: every 30-90 s)
+const FIRST_CHAOS_MS = [20000, 40000];   // the first prank after startup on chaos
 function nextDelay(freq, R_ = Math.random) { const [a, b] = FREQ[freq] || FREQ.normal; return Math.round((a + R_() * (b - a)) * 60000); }
 // Cursor activity without any poll: main's existing 60 fps loop feeds note(); this keeps an exponential moving average of speed.
 function createActivity(tau = 3) {
@@ -180,7 +181,7 @@ function overlayBox(area, bounds, margin = 160) {
   return R(Math.min(x0, bounds.x + bounds.width - w), Math.min(y0, bounds.y + bounds.height - h), w, h);
 }
 
-module.exports = { overlayBox, R, fromArr, right, bottom, center, inflate, intersects, containsPt, union, distToRect, sameRect, within, physToDip, cropFor, displayAt, layoutKey,
+module.exports = { FIRST_CHAOS_MS, overlayBox, R, fromArr, right, bottom, center, inflate, intersects, containsPt, union, distToRect, sameRect, within, physToDip, cropFor, displayAt, layoutKey,
   ALLOWED_APPS, appAllowed, buildModel, desktopRows, groupLines, FREQ, nextDelay, createActivity, blockedReason, CAP_MS, abortReason, sameSig, candidates };
 
 // Dev restore check: compares the same screen areas before and after a prank (bitmaps of a whole display, physical pixels).

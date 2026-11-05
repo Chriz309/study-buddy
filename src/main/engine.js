@@ -83,22 +83,25 @@ const Engine = {
       for(const k of this.recent) if(w[k]!=null) w[k]*=0.4;
       const ch=this._pick(w); this.recent.unshift(ch); this.recent=this.recent.slice(0,2); this.run(ch);
       this.nextDecision=now+rnd(1800,4200); return; }
-    const w={walk:3,idle:2.4,sit:1.4,sleep:0.8,jump:1.0,bounce:1.6,climb:0.8*mis+.15,peek:0.7*mis+.1,say:1.0,look:1.6,
+    // the Mischief slider drives liveliness: more climbing / peeking / jumping / zoomies and less idling as it goes up
+    const w={walk:3,idle:2.4-1.2*mis,sit:1.4-0.7*mis,sleep:0.8-0.5*mis,jump:1.0+1.6*mis,bounce:1.6+0.4*mis,climb:3.0*mis+.02,peek:2.2*mis+.02,say:1.0,look:1.6,zoom:2.5*mis+.1,
       toWindow:(this.ledge&&!this.onLedge())?2.4:0};
     if(per==='hyper'){w.walk+=2;w.jump+=2;w.sleep=.2;w.sit=.4;}
     if(per==='sleepy'){w.sleep+=2.5;w.sit+=2;w.walk-=1.2;}
     if(per==='naughty'){w.climb+=1.3;w.peek+=1;w.jump+=1;}
     if(per==='chill'){w.idle+=1;w.sit+=.6;}
-    if(this.gait==='step'){ w.climb=0; w.peek=0; w.toWindow=0; w.bounce=0; }  // cats don't wall-climb or slime-bounce
+    if(this.gait==='step'){ w.climb=0; w.peek=0; w.toWindow=0; w.bounce=0; } else w.zoom=0;  // cats don't wall-climb or slime-bounce
     for(const k of this.recent) if(w[k]!=null) w[k]*=0.35;
     const keys=Object.keys(w); let sum=keys.reduce((a,k)=>a+Math.max(0,w[k]),0), r=Math.random()*sum, ch='idle';
     for(const k of keys){ r-=Math.max(0,w[k]); if(r<=0){ch=k;break;} }
     this.recent.unshift(ch); this.recent=this.recent.slice(0,2); this.run(ch);
-    this.nextDecision=now+rnd(1500,3800)/(per==='hyper'?1.8:per==='sleepy'?.7:1); },
-  run(b){ const mid=this.size/2,x0=this.world.x0,x1=this.world.x1;
+    this.nextDecision=now+rnd(1500,3800)/((per==='hyper'?1.8:per==='sleepy'?.7:1)*(1+0.5*mis)); },
+  run(b){ const mid=this.size/2,x0=this.world.x0,x1=this.world.x1; this._zoom=false;
     switch(b){
       case 'walk': { let a=x0+mid, b=x1-mid; if(this.onLedge()){ a=this.ledge.x0+mid*0.5; b=this.ledge.x1-mid*0.5; } // hop along the window edge when perched
-        this.target=rnd(a,b); this.setState('walk',1e9); break; }
+        this.target=this._onFloorX(rnd(a,b)); this.setState('walk',1e9); break; }
+      case 'zoom': { const a=x0+mid, b2=x1-mid, cx=this.pos.x+mid, far=(cx-a)>(b2-cx)?[a,cx-(b2-a)*0.35]:[cx+(b2-a)*0.35,b2];   // a long dash to the far side
+        this.target=this._onFloorX(clamp(rnd(Math.min(far[0],far[1]),Math.max(far[0],far[1])),a,b2)); this._zoom=true; this.setState('walk',1e9); this.hooks.event&&this.hooks.event('wiggle'); break; }
       case 'idle': this.setState('idle',rnd(1200,3000)); break;
       case 'sit': this.setState('sit',rnd(2500,6000)); break;
       case 'sleep': this.nap(); break;
@@ -113,6 +116,9 @@ const Engine = {
       case 'look': { const dir=(this.cursor&&isFinite(this.cursor.x))?sign(this.cursor.x-(this.pos.x+this.size/2)):0; this.hooks.event&&this.hooks.event('look',{dir}); this.setState('idle',rnd(900,1600)); break; }
       case 'say': this.hooks.event&&this.hooks.event('say',{kind:Math.random()<.4?'study':'idle'}); this.setState('idle',1600); break;
     } },
+  // nearest x where the sprite's centre stands on a real monitor floor (never a target in the gap between monitors)
+  _onFloorX(x){ const F=this.world.floors; if(this.onLedge()||!F||!F.length) return x; let best=x,bd=Infinity;
+    for(const f of F){ const m=Math.min(this.size/2,(f.x1-f.x0)/2), c=clamp(x,f.x0+m,f.x1-m), d=Math.abs(c-x); if(d<bd){bd=d;best=c;} } return best; },
   climbWall(){ const toLeft=this.pos.x<(this.world.x0+this.world.x1)/2; this.climbEdge=toLeft?this.world.x0:this.world.x1-this.size;
     this.target=this.climbEdge; this.setState('walk',1e9); this._wantClimb=true; },
   peek(){ const toLeft=Math.random()<.5; this.target=toLeft?this.world.x0-this.size*0.35:this.world.x1-this.size*0.65; this.setState('walk',1e9); this._peeking=true; },
@@ -138,11 +144,11 @@ const Engine = {
         this.pos.y=this._climbStopY; this._wantClimb=false; this._climbStopY=null; this.onFloor=true; this.vel.y=0; this.setState('idle',rnd(800,1800)); return; }
       if(this.pos.y<this.world.y0+rnd(10,60)){ this._wantClimb=false; this._climbStopY=null; this.onFloor=false; this.vel.y=0; this.setState('fall',1e9); } return; }
     if(this.state==='walk'&&this.target!=null&&this.onFloor){ const d=this.target-this.pos.x, hp=(this.settings.speed||1);
-      if(Math.abs(d)<this.size*0.35){ this.pos.x=this.target; this.target=null;
+      if(Math.abs(d)<this.size*0.35){ this.pos.x=this.target; this.target=null; this._zoom=false;
         if(this._peeking){ this._peeking=false; this.hooks.event&&this.hooks.event('look'); this.setState('idle',rnd(900,1800)); }
         else if(!this._wantClimb) this.setState('idle',rnd(400,1200)); }
       else if(this.gait==='step'){ // cats walk smoothly along the floor instead of hopping
-        this.facing=sign(d); this.pos.x+=this.facing*spd*1.6*dt; }
+        this.facing=sign(d); this.pos.x+=this.facing*spd*1.6*(this._zoom?2.6:1)*dt; }
       else if(now>=(this._nextHop||0)){ // slimes hop, they don't walk
         this.facing=sign(d); this.vel.y=-rnd(230,320)*(0.9+0.3*hp); this.vel.x=this.facing*rnd(120,185)*(0.7+0.5*hp);
         this.onFloor=false; this.hooks.event&&this.hooks.event('hop'); } }
@@ -224,6 +230,14 @@ const Engine = {
   // A script is { name, maxMs, update(engine,dt,now) -> true when finished, cancel?(engine,reason) }.
   // While one runs the normal brain is suspended. Dragging, rescue, a character swap, stay-put or
   // the window hiding cancel it, and a time cap guarantees it can never get stuck.
+  // A resting-walk is not "busy": stop it where it is so a due antic/prank can start (never touches scripts, drags, sleep, jumps, climbs).
+  settle(){ if(this.script||this.dragging||this.moveType==='float'||this.parachute) return false;
+    const st=this.state; if(st!=='walk'&&st!=='climb'&&st!=='fall') return false;
+    this._wantClimb=this._peeking=this._zoom=false; this._climbStopY=null;
+    if(st==='walk'){ this.target=null; this.vel.x=0; this.setState('idle',900); }          // stop where it is (a hop in flight just lands)
+    else if(st==='climb'){ this.target=null; this.onFloor=false; this.vel.y=0; this.setState('fall',1e9); }   // let go of the wall
+    this.nextDecision=Math.max(this.nextDecision||0,(this._now||0)+2500);                    // hold the random brain while the caller waits for the landing
+    return true; },
   canStartScript(air){ return !this.script && !this.dragging && (this.onFloor || (air === true && this.moveType === 'float')) && !this.settings.stayPut && !this.parachute
     && (this.state==='idle'||this.state==='sit') && !this.onLedge() && this.displays.length>0; },
   currentDisplay(){ const d=geo.displayForSprite(this.pos,this.size,this.displays)||this.displays[0]; return d?{x0:d.workArea.x,x1:d.workArea.x+d.workArea.width,y0:d.workArea.y,y1:d.workArea.y+d.workArea.height}:{x0:this.world.x0,x1:this.world.x1,y0:this.world.y0,y1:this.world.y1}; },

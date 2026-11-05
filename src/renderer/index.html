@@ -23,6 +23,8 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 @keyframes rise { 0% { opacity: 1; transform: translateY(0) scale(.6);} 100% { opacity: 0; transform: translateY(-48px) scale(1.2);} }
 .zzz { position: absolute; font-size: 18px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.4); pointer-events: none; animation: zfloat 1.9s ease-out forwards; font-weight: 800; }
 /* arcade fx for Captain Cram: dust puff, sparkle, +1 INT! pop-up, cape/speed trail */
+.smoke { position: absolute; background: #3a3a40; pointer-events: none; image-rendering: pixelated; animation: smoke 1.1s ease-out forwards; }
+@keyframes smoke { 0% { opacity: .9; transform: translate(0,0) scale(.7);} 100% { opacity: 0; transform: translate(var(--dx),-52px) scale(1.7);} }
 .dust { position: absolute; background: #cbb89a; pointer-events: none; image-rendering: pixelated; animation: dust .6s ease-out forwards; }
 @keyframes dust { 0% { opacity: .95; transform: translate(0,0) scale(1);} 100% { opacity: 0; transform: translate(var(--dx),var(--dy)) scale(.4);} }
 .sparkle { position: absolute; pointer-events: none; image-rendering: pixelated; animation: sparkle .75s steps(6) forwards;
@@ -49,6 +51,7 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
   <script src="art.js"></script>
   <script src="art-ghost.js"></script>
   <script src="art-cat.js"></script>
+  <script src="art-cat-mischief.js"></script>
   <script src="art-hero.js"></script>
   <script src="parachute.js"></script>
   <script src="food.js"></script>

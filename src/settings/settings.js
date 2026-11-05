@@ -193,6 +193,7 @@
       ${rowSelect('Size', 'How big it appears on screen.', 'size', sizeOpts(s.size), s.size)}
       ${rowToggle('Stay in one spot', 'Naughty corner: stops roaming — just idle animations, little hops and reactions where it stands.', 'stayPut', s.stayPut)}
       ${rowToggle('Special antics', 'Now and then: Pib chases a butterfly, Captain Cram does a stunt. Only while resting, never in fullscreen.', 'antics', s.antics !== false)}
+      ${state.platform === 'win32' ? rowToggle('Desktop mischief', 'Now and then your buddy appears to play with your taskbar, icons and windows. Only a drawn illusion on top: nothing is ever moved, clicked or typed, and it stops the moment you come near. Windows only.', 'deskMischief', !!state.mischiefOn) + rowSelect('Mischief frequency', 'How often the desktop pranks happen.', 'deskMischiefFreq', [['rare', 'Rare'], ['normal', 'Normal'], ['chaos', 'Chaos']], s.deskMischiefFreq || 'normal') : ''}
       ${rowToggle('Speech bubbles', 'Let it say things now and then.', 'speech', s.speech)}
       ${rowRange('Chattiness', 'How often it speaks up (floaty pets talk less).', 'chatter', 0, 1, 0.1, (s.chatter==null?0.6:s.chatter), '')}
       ${rowToggle('Reduce motion', 'Calmer, minimal animation.', 'reduceMotion', s.reduceMotion)}

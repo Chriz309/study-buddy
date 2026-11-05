@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, shell, dialog, powerMonitor } = require('electron');
+const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, shell, dialog, powerMonitor, desktopCapturer } = require('electron');
 const path = require('path');
 const fgProbe = require('./fgprobe');   // Windows foreground-window probe (one long-lived PowerShell)
 const store = require('./store');
@@ -11,6 +11,11 @@ const watchdog = require('./watchdog');
 const scripts = require('./scripts');
 const toy = require('./toy');
 const devrun = require('./devrun');
+const mlogic = require('./mischief/logic');       // desktop mischief (Windows overlay illusions): see src/main/mischief/
+const { createManager } = require('./mischief/manager');
+const { createHost } = require('./mischief/host');
+const { createProbe } = require('./mischief/probe');
+const MGAGS = require('../mischief/gags');
 
 // --- dev mode (STUDYBUDDY_DEV=1): tray test items, a scripted command run and a log file. Off in
 // normal use; it also keeps test runs from registering a login item (see applyLoginItem).
@@ -207,7 +212,7 @@ function startEngine() {
     if (!calm) calmSkip = 0;
     const now = Date.now();
     const cur = screen.getCursorScreenPoint();
-    engine.setCursor({ x: cur.x, y: cur.y });
+    engine.setCursor({ x: cur.x, y: cur.y }); mischiefActivity.note(cur.x, cur.y, now);   // the only per-frame cost of desktop mischief: one EMA update
     if (grabOff && engine.dragging) engine.dragTo(cur.x - grabOff.dx + engine.size / 2, cur.y - grabOff.dy + engine.size / 2);
     engine.tick(now);
     applyVisibility();
@@ -237,7 +242,9 @@ function sendPet() {
   const now = Date.now();
   if (_lastPx != null && now > _lastPt) { const v = (engine.pos.x - _lastPx) / ((now - _lastPt) / 1000); if (Number.isFinite(v)) _vx += (v - _vx) * 0.3; }
   _lastPx = engine.pos.x; _lastPt = now;
-  petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, size: engine.size, state: engine.state, facing: engine.facing, vx: Math.round(_vx) });
+  const mf = engine.mischief;   // set only while a mischief script runs: clip line (peeking out of the taskbar) and tilt
+  petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, size: engine.size, state: engine.state, facing: engine.facing, vx: Math.round(_vx),
+    clip: mf && mf.clipY != null ? Math.round(mf.clipY - (engine.pos.y - petWin._localY)) : null, rot: mf && mf.rot ? Math.round(mf.rot) : 0 });
 }
 function setPetInteractive(cur) {
   if (!petWin || petWin.isDestroyed() || !petWin._shown) return;
@@ -337,7 +344,7 @@ function fullState() {
   const pool = rollPool(s.owned).map(c => c.id);
   return { ...s, lockedIds: lockedIds(s.owned), catalog: CHARACTERS, currency: CURRENCY, rarities: RARITIES, personalities: PERSONALITIES,
     rate: sparkRate(), gumballCost: gumballCost(), gumballPool: pool, buddyHidden: userHidden,
-    devTools: DEV_TOOLS, infiniteSparks: economy.infinite, update, platform: process.platform, appVersion: app.getVersion() };
+    devTools: DEV_TOOLS, infiniteSparks: economy.infinite, mischiefOn: mischiefEnabled(), update, platform: process.platform, appVersion: app.getVersion() };
 }
 function pushState() {
   const payload = fullState();
@@ -380,9 +387,12 @@ function refreshTrayMenu() {
     { label: 'Start on login', type: 'checkbox', checked: s.settings.startOnBoot, click: (mi) => setStartOnBoot(mi.checked) },
     { type: 'separator' },
     { label: 'About', click: () => openSettings() },
+    ...(process.platform === 'win32' ? [{ label: 'Stop mischief', enabled: mischiefEnabled(), click: () => stopMischief() }] : []),
     ...(DEV ? [{ type: 'separator' }, { label: 'DEV: unlock Captain Cram', click: () => devUnlock('hero') }, { label: 'DEV: unlock Pib (cat)', click: () => devUnlock('cat') },
       { label: 'DEV: cat chase', click: () => devTrigger('chase') }, { label: 'DEV: hero landing', click: () => devTrigger('landing') },
-      { label: 'DEV: hero patrol', click: () => devTrigger('patrol') }, { label: 'DEV: hero power up', click: () => devTrigger('powerup') }] : []),
+      { label: 'DEV: hero patrol', click: () => devTrigger('patrol') }, { label: 'DEV: hero power up', click: () => devTrigger('powerup') },
+      { label: 'DEV: mischief', submenu: [...Object.keys(MGAGS.G).map(id => ({ label: MGAGS.G[id].label, click: () => devPrank(id) })), { type: 'separator' },
+        { label: 'chaos: a prank every 45 s', type: 'checkbox', checked: mischiefChaos, click: (mi) => { mischiefChaos = mi.checked; if (mischief) mischief.setChaos(mischiefChaos); devLog('mischief chaos', mischiefChaos); } }] }] : []),
     { label: 'Quit Study Buddy', click: () => { app.isQuiting = true; app.quit(); } },
   ]));
 }
@@ -475,7 +485,7 @@ ipcMain.handle('state:get', () => fullState());
 ipcMain.handle('settings:patch', (_e, patch) => {
   store.set({ settings: patch });
   if ('startOnBoot' in patch) setStartOnBoot(patch.startOnBoot);
-  syncEngineSettings(); pushState(); refreshTrayMenu(); scheduleAntic(); return fullState();
+  syncEngineSettings(); pushState(); refreshTrayMenu(); scheduleAntic(); if (mischief) { if (!mischiefEnabled()) mischief.stop('stopped'); mischief.schedule(); } return fullState();
 });
 ipcMain.handle('buddy:unlock', (_e, id) => {
   const s = store.get(); const c = characterById(id);
@@ -662,6 +672,56 @@ function startAntic(name) {
   return engine.startScript(sc, Date.now());
 }
 
+// --- desktop mischief ----------------------------------------------------------------------------
+// Opt-in (default OFF in public builds, ON in dev builds). Overlay illusions only: see src/main/mischief/manager.js.
+const mischiefActivity = mlogic.createActivity();
+let mischief = null, mischiefHost = null, mischiefChaos = false, mfFlags = { locked: false, suspended: false }, devCursor = null, devAbortAt = 0;
+function mischiefEnabled() { if (process.platform !== 'win32') return false; const v = store.get().settings.deskMischief; return v == null ? DEV : !!v; }
+function petEventOut(type, data) { if (petWin && !petWin.isDestroyed()) petWin.webContents.send('petEvent', Object.assign({ type }, data || {})); }
+function initMischief() {
+  if (process.platform !== 'win32') return;   // other platforms: nothing is created, nothing is requested
+  mischiefHost = createHost({ BrowserWindow, desktopCapturer, screen, getPetWin: () => petWin });
+  mischief = createManager({
+    platform: process.platform, now: Date.now, rand: Math.random, log: (...a) => devLog(...a), engine, host: mischiefHost, activity: mischiefActivity,
+    settings: () => ({ enabled: mischiefEnabled(), freq: store.get().settings.deskMischiefFreq || 'normal' }),
+    flags: () => { const s = store.get().settings; return { userHidden, petShown: !!(petWin && !petWin.isDestroyed() && petWin._shown), paused: !!s.paused, stayPut: !!s.stayPut, reduceMotion: !!s.reduceMotion, fullscreen: fsDisplays.size > 0, locked: mfFlags.locked, suspended: mfFlags.suspended }; },
+    makeProbe: () => createProbe(), char: () => store.get().active, cursor: () => devCursor || screen.getCursorScreenPoint(),
+    emit: petEventOut, setFx: (fx) => { engine.mischief = fx; }, sleep: (ms) => new Promise(r => setTimeout(r, ms)),
+    spriteBox: () => mlogic.R(engine.pos.x, engine.pos.y - engine.size * 0.3, engine.size, engine.size * 1.3),
+    hidePet: (on) => { try { if (petWin && !petWin.isDestroyed()) petWin.setOpacity(on ? 0 : (petWin._shown ? 1 : 0)); } catch {} },
+    onResult: (r) => { if (r.status === 'aborted' && devAbortAt) { devLog('ABORT-LATENCY', r.id, r.reason, (Date.now() - devAbortAt) + 'ms'); devAbortAt = 0; } },
+  });
+  ipcMain.on('mischief:ready', () => mischiefHost._ready());
+  ipcMain.on('mischief:error', (_e, m) => mischiefHost._error(m));
+  const stopNow = (why) => { if (mischief) mischief.stop(why); };
+  try {
+    powerMonitor.on('lock-screen', () => { mfFlags.locked = true; stopNow('session-locked'); }); powerMonitor.on('unlock-screen', () => { mfFlags.locked = false; });
+    powerMonitor.on('suspend', () => { mfFlags.suspended = true; stopNow('suspended'); }); powerMonitor.on('resume', () => { mfFlags.suspended = false; });
+  } catch {}
+  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(ev, () => stopNow('display-changed'));
+  mischief.schedule();
+}
+function stopMischief() {   // tray "Stop mischief": end the current prank right now and switch the feature off
+  if (mischief) mischief.stop('stopped');
+  store.set({ settings: { deskMischief: false } }); if (mischief) mischief.schedule(); pushState(); refreshTrayMenu();
+}
+function devPrank(id) {
+  if (!DEV || !mischief) return;
+  engine.cancelScript('dev'); resetInteraction(); engine.pos.y = engine.floorAt(engine.pos.x); engine.onFloor = true; engine.vel.x = engine.vel.y = 0; engine.setState('idle', 1000);
+  devLog('dev prank', id); return mischief.start({ only: id, force: true });
+}
+// DEV: prove a prank restores the screen. Captures the target area (sprite hidden) before and after, compares in memory, logs the numbers. Nothing is saved.
+async function devVerify(id) {
+  if (!DEV || !mischief) return;
+  const wins0 = BrowserWindow.getAllWindows().length, disp = mischiefHost.displays()[0];
+  const grab = async () => { mischief.hidePetForVerify(true); await new Promise(r => setTimeout(r, 120)); const p = await mischiefHost.pixels(disp, disp.bounds); mischief.hidePetForVerify(false); return p; };
+  const before = await grab(); const res = await devPrank(id);
+  await new Promise(r => setTimeout(r, 2200));   // sprite falls back to the floor
+  const after = await grab(), rects = (res && res.rects) || [];
+  const cmp = mlogic.compareRegions(before, after, rects.length ? rects : [disp.bounds], disp);
+  devLog('VERIFY', id, JSON.stringify({ result: res && res.status, reason: res && res.reason, meanDiff: +cmp.mean.toFixed(5), pctChanged: +cmp.pct.toFixed(3), maxChannel: cmp.max, overlaysBefore: wins0, overlaysAfter: BrowserWindow.getAllWindows().length }));
+}
+
 // --- dev helpers (STUDYBUDDY_DEV=1 only) -------------------------------------------------------
 function devUnlock(id) {
   if (!DEV) return;
@@ -699,6 +759,12 @@ function startDevRun() {
         case 'grab': engine.grab(); grabOff = { dx: engine.size / 2, dy: engine.size / 2 }; dragStartAt = dragPingAt = Date.now(); break;
         case 'release': engine.release(); grabOff = null; break;
         case 'bringback': bringBuddyBack(); break;
+        case 'prank': devPrank(step.arg); break;
+        case 'mstop': if (mischief) mischief.stop('stopped'); break;
+        case 'mchaos': mischiefChaos = true; if (mischief) mischief.setChaos(true); break;
+        case 'mnear': { const r = mischief && mischief.targets(); if (r && r[0]) { devAbortAt = Date.now(); devCursor = { x: Math.round(r[0].x + r[0].w / 2), y: Math.round(r[0].y + r[0].h / 2) }; } break; }
+        case 'mfar': devCursor = null; break;
+        case 'mverify': devVerify(step.arg).catch((e) => logError('mverify', e)); break;
         case 'mdown': case 'mmove': case 'mup': { // dev: synthesize pointer events straight into the pet renderer ("dx,dy[,held]" relative to the sprite)
           const [dx = 0, dy = 0, held = 0] = (step.arg || '').split(',').map(Number);
           if (!petWin || petWin.isDestroyed()) break;
@@ -756,9 +822,10 @@ app.on('ready', () => {
   setInterval(pollForeground, 1500);
   setInterval(runWatchdog, 2500);       // self-healing: off-screen sprite, stuck drag, drifted window, lost click-through/topmost
   scheduleAntic();
+  initMischief();
   if (DEV) startDevRun();
   setTimeout(checkGraphicsOnce, 6000);   // see "Software-graphics safety net" at the top  // window-awareness / fullscreen poll (Windows) — gentler on CPU
 });
 app.on('window-all-closed', () => { /* keep running in tray */ });
 app.on('activate', () => openSettings());   // macOS: clicking the Dock icon opens Shop & Settings
-app.on('before-quit', () => { app.isQuiting = true; clearTimeout(anticTimer); try { toy.destroy(); } catch {} try { fgProbe.stop(); } catch {} store.saveNow(); });
+app.on('before-quit', () => { app.isQuiting = true; clearTimeout(anticTimer); try { if (mischief) mischief.stop('quit'); if (mischiefHost) mischiefHost.close(); } catch {} try { toy.destroy(); } catch {} try { fgProbe.stop(); } catch {} store.saveNow(); });

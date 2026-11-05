@@ -10,19 +10,21 @@
   const CHARS={
     blob:  {art:window.BLOB_ART,  float:false, swirl:false, vectorFace:true},
     ghost: {art:window.GHOST_ART, float:true,  swirl:true,  vectorFace:true},
-    cat:   {poses:(window.CAT_ART||{}), float:false, swirl:false, vectorFace:false, directional:true, walk:['side','side2','side3','side4']},
+    cat:   {poses:Object.assign({}, window.CAT_ART||{}, window.CAT_ART_EXTRA||{}), float:false, swirl:false, vectorFace:false, directional:true, walk:['side','side2','side3','side4']},
     // Captain Cram: 16-bit pixel art. nearest-neighbour texture + a stiffer, calmer jelly so the pixels stay crisp
     hero:  {poses:(window.HERO_ART||{}), float:false, swirl:false, vectorFace:false, directional:true, nearest:true, jelly:{k:300,damp:9.5,squish:0.7},
             walk:['walk1','walk2','walk3','walk4']},
   };
   // per-pose height scale so a lying cat doesn't look bigger than a standing one
   // heights chosen so the cat's head is the same size in every pose (all frames share one art scale)
-  const POSE_H={ side:1, side2:1, side3:1, side4:1, front:1.052, sit:1.067, lay:0.718 };
+  const POSE_H={ side:1, side2:1, side3:1, side4:1, front:1.052, sit:1.067, lay:0.718, shock:1.052, frazzled:1.052, pull:1.06, juggle:1.12, peek:1.0 };
   // 4-frame walk cycle: stride → passing → (other) stride → passing
+Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated desktop-mischief cat frames
   let WALK=['side','side2','side3','side4'];
   const HERO_H=1.25;   // the 40px canvas has margins: draw it 1.25x so the figure is as tall as the size setting
   // cat coat colours (the orange art recoloured via filters) — hue-rotate looked broken on it
   const CAT_COLORS={ ginger:'', grey:'grayscale(1) brightness(1.02)', black:'grayscale(1) brightness(.42) contrast(1.15)', white:'grayscale(1) brightness(1.72) contrast(.82)' };
+  let lastRot=0, lastClip=null, tintOn=false, xrayT=0, smokeT=0;
   let dpr=Math.max(1,window.devicePixelRatio||1);
   let jelly, face, settings=null, ready=false, curChar='blob', floatMode=false, images={}, poseImgs={};
   let vectorFace=true, directional=false, curPose=null, heightScale=1;
@@ -41,15 +43,20 @@
   jelly=new Jelly(glc,{grid:12,squish:1.1,stiffness:135,damp:5.3,coupling:0.3});
   face=new Face(faceSvg); face.setExpr('neutral');
   let colorsMap={};
-  function applyColor(){ let f='';
+  let extraTint='';
+  function applyColor(tint){ if(typeof tint==='string') extraTint=tint; let f='';
     if(curChar==='cat'){ f = CAT_COLORS[(colorsMap&&colorsMap.cat)||'ginger'] || ''; }
     else { const h=(colorsMap&&colorsMap[curChar])||0; f = h?('hue-rotate('+h+'deg)'):''; }
+    if(extraTint) f=(f+' '+extraTint).trim();
     glc.style.filter=f; faceSvg.style.filter=f; }
   // flip to face travel; the dive pose is the flying pose rotated head-down about the sprite's centre
   function applyFacing(){
-    const flip=(directional && pet.facing<0) ? 'scaleX(-1)' : '', rot=(curChar==='hero' && pet.state==='dive') ? ' rotate(90deg)' : '';
+    const flip=(directional && pet.facing<0) ? 'scaleX(-1)' : '', lean=(pet.state==='pushing'&&directional)?9:0, spin=(pet.rot||0)+lean, rot=(curChar==='hero' && pet.state==='dive') ? ' rotate(90deg)' : (spin ? ' rotate('+spin+'deg)' : '');
     glc.style.transformOrigin=(pet.x+pet.size/2)+'px '+(pet.y+pet.size-heightScale*pet.size/2)+'px'; glc.style.transform=(flip+rot).trim(); }
+  // desktop mischief reaction states (cat + hero have their own frames; 'pushing' reuses 'pull', tilted forward)
+  const MISCHIEF_POSE={ shocked:'shock', frazzled:'frazzled', pulling:'pull', pushing:'pull', juggling:'juggle', peeking:'peek' };
   function poseFor(st){
+    if(MISCHIEF_POSE[st] && poseImgs[curChar+'/'+MISCHIEF_POSE[st]]) return MISCHIEF_POSE[st];
     if(curChar==='hero'){ switch(st){ case 'walk': case 'run': case 'climb': return 'walk1'; case 'fly': case 'dive': case 'fall': return 'fly'; case 'flex': return 'flex';
       case 'land': case 'crouch': return 'land'; case 'sleep': return 'sleep'; case 'happy': case 'drag': return 'happy'; default: return 'idle'; } }
     switch(st){ case 'walk': case 'run': case 'pounce': case 'climb': case 'fall': return 'side'; case 'sleep': return 'lay'; case 'sit': return 'sit'; default: return 'front'; } }
@@ -108,6 +115,8 @@
 
   window.buddy.onPet((p)=>{
     const was=pet.show, prevFacing=pet.facing; pet=p;
+    if((p.clip==null?null:p.clip)!==lastClip){ lastClip=p.clip==null?null:p.clip; document.body.style.clipPath = lastClip==null ? '' : 'inset(0 0 calc(100% - '+Math.max(0,lastClip)+'px) 0)'; }   // peeking out of the taskbar
+    if((p.rot||0)!==lastRot){ lastRot=p.rot||0; applyFacing(); }
     if(p.show){ if(p.size!==lastSize) applySize();
       if(p.state!==lastState){ boostUntil=performance.now()+1200; onStateChange(p.state); if(CHARS[curChar]&&CHARS[curChar].poses) setPose(poseFor(p.state)); lastState=p.state; applyFacing(); placeTrail(); }
       if(p.facing!==prevFacing){ applyFacing(); placeTrail(); }
@@ -115,7 +124,14 @@
       if(!was){ faceSvg.style.display = vectorFace ? '' : 'none'; applyFacing(); }
     } else if(was){ faceSvg.style.display='none'; clearInterval(zzzTimer); }
   });
-  function onStateChange(st){ clearInterval(zzzTimer);
+  // blob + ghost have no new frames: expression, squash/stretch and a tint carry the reaction states
+  function mischiefLook(st){
+    const tint = st==='frazzled' ? 'brightness(.5) saturate(.6) contrast(1.1)' : st==='shocked' ? 'brightness(1.45) saturate(1.5) sepia(.35)' : '';
+    if(tintOn!==!!tint || tint){ tintOn=!!tint; applyColor(tint); }
+    if(st==='shocked'||st==='peeking'){ face.setExpr('surprised'); } else if(st==='frazzled'){ face.setExpr('dizzy'); } else if(st==='juggling'){ face.setExpr('happy'); }
+    else if(st==='pulling'){ face.setExpr('neutral'); jelly.stretch(.3); } else if(st==='pushing'){ face.setExpr('neutral'); jelly.squash(.35); }
+    if(st==='shocked'){ jelly.stretch(.7); setTimeout(()=>jelly.squash(.5),120); } }
+  function onStateChange(st){ clearInterval(zzzTimer); mischiefLook(st); if(MISCHIEF_POSE[st]) return;
     if(st==='sleep'){ face.setExpr('sleepy'); zzzTimer=setInterval(()=>{const p=petScreenCss();spawn('z','zzz',p.x,p.y);},950); }
     else if(st==='drag'){ face.setExpr('happy'); }
     else if(st==='climb'){ /* back turned */ }
@@ -146,7 +162,18 @@
       case 'dust': dust(10,1); break;
       case 'sparkle': sparkles(e.n||8); break;
       case 'popup': popup(e.text||'+1 INT!'); break;
+      case 'xray': xray(e.ms||500); break;
+      case 'smoke': smoke(e.ms||2000); break;
     } });
+  // ---- desktop mischief fx: x-ray skeleton flash, smoke puffs ----
+  const BONES=['..XXXX..','.XXXXXX.','.X.XX.X.','..XXXX..','...XX...','XXXXXXXX','.X.XX.X.','X..XX..X','.X.XX.X.','..XXXX..','..X..X..','..X..X..','.XX..XX.'];
+  const xr=document.createElement('canvas'); xr.id='xray'; xr.width=8; xr.height=13; xr.style.cssText='position:absolute;display:none;image-rendering:pixelated;pointer-events:none;z-index:12;filter:drop-shadow(0 0 3px #7fe7ff)'; document.body.appendChild(xr);
+  { const c=xr.getContext('2d'); c.fillStyle='#e9fbff'; BONES.forEach((row,y)=>{ for(let x=0;x<8;x++) if(row[x]==='X') c.fillRect(x,y,1,1); }); }
+  function xray(ms){ clearTimeout(xrayT); const S=pet.size, w=S*0.5, h=w*13/8; xr.style.width=w+'px'; xr.style.height=h+'px'; xr.style.left=(pet.x+S/2-w/2)+'px'; xr.style.top=(pet.y+S-heightScale*S*0.5-h*0.42)+'px'; xr.style.display='block';
+    extraTint='invert(1) hue-rotate(180deg) brightness(.9)'; applyColor(); xrayT=setTimeout(()=>{ xr.style.display='none'; extraTint=''; applyColor(lastState==='frazzled'?'brightness(.5) saturate(.6) contrast(1.1)':''); },ms); }
+  function smoke(ms){ clearInterval(smokeT); const end=performance.now()+ms; smokeT=setInterval(()=>{ if(performance.now()>end||!pet.show){ clearInterval(smokeT); return; }
+    const el=document.createElement('div'); el.className='smoke'; const u=Math.max(4,Math.round(pet.size*0.1)); el.style.width=el.style.height=u*(1+Math.floor(Math.random()*2))+'px';
+    el.style.left=(pet.x+pet.size*(0.3+Math.random()*0.4))+'px'; el.style.top=(pet.y+pet.size-heightScale*pet.size*0.85)+'px'; el.style.setProperty('--dx',((Math.random()-.5)*pet.size*0.5)+'px'); fx.appendChild(el); setTimeout(()=>el.remove(),1100); },110); }
   // ---- arcade fx (Captain Cram) ----
   function dust(n,k){ const cx=pet.x+pet.size/2, gy=pet.y+pet.size-2, u=Math.max(3,Math.round(pet.size*0.07));
     for(let i=0;i<n;i++){ const el=document.createElement('div'); el.className='dust'; const sz=u*(1+Math.floor(Math.random()*2));

@@ -64,7 +64,6 @@ test('a transparent (click-through) full-monitor overlay is ignored', () => {
 });
 test('a maximized window with a caption is not fullscreen, even with an auto-hidden taskbar', () => {
   assert.deepEqual(run([win(-8, -8, 1928, 1088, { zoomed: true, caption: true })]), []);
-  assert.deepEqual(run([fsA({ caption: true })]), []);
 });
 test('invisible, minimised, cloaked, tool-window and own-process windows are skipped', () => {
   const normal = win(100, 100, 1800, 1000, { caption: true });
@@ -83,14 +82,17 @@ test('the order matters: fullscreen window on top of a normal one wins', () => {
   assert.deepEqual(run([fsA(), win(100, 100, 1800, 1000, { caption: true })]), [1]);
 });
 
+test('a full-monitor window that keeps a caption style but is not maximized IS fullscreen (some players and borderless games)', () => {
+  assert.deepEqual(run([fsA({ caption: true })]), [1]);
+});
 // ------------------------------------------------------------------ notification state
 test('notification state 3 (exclusive D3D) / 4 (presentation) marks the foreground window display', () => {
-  const game = win(1920, 0, 3840, 1080, { caption: true });   // looks windowed, but the shell says exclusive fullscreen
+  const game = win(2000, 100, 3700, 1000, { caption: true });   // looks windowed, but the shell says exclusive fullscreen
   assert.deepEqual(run([game], { ns: 3, fg: game }), [2]);
   assert.deepEqual(run([game], { ns: 4, fg: game }), [2]);
 });
 test('notification state 2 (busy) alone is NOT fullscreen (our own overlay can cause it)', () => {
-  const game = win(0, 0, 1920, 1080, { caption: true });
+  const game = win(100, 100, 1800, 1000, { caption: true });
   assert.deepEqual(run([game], { ns: 2, fg: game }), []);
   assert.deepEqual(run([game], { ns: 5, fg: game }), []);
 });

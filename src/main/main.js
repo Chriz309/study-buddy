@@ -154,7 +154,14 @@ function reloadPetSoon() {
   }, r.delay);
 }
 // visible unless the user hid it, or the sprite's RECT touches a display covered by a fullscreen app (not just its centre)
-function petShouldShow() { return !userHidden && !spriteTouchesFullscreen(); }
+function petShouldShow() { return !userHidden && !spriteTouchesFullscreen() && !petBoxTouchesFullscreen(); }
+// the window box holds the speech bubble and can overhang the sprite: a bubble must not poke onto a movie from the neighbouring monitor
+function petBoxTouchesFullscreen() {
+  if (!fsDisplays.size) return false;
+  const { Wd, Ht, localX, localY } = petBox(engine.size);
+  for (const d of screen.getAllDisplays()) if (fsDisplays.has(d.id) && geo.overlapArea(engine.pos.x - localX, engine.pos.y - localY, Wd, Ht, d.bounds) > 0) return true;
+  return false;
+}
 function spriteTouchesFullscreen() {
   if (!fsDisplays.size) return false;
   for (const d of screen.getAllDisplays()) if (fsDisplays.has(d.id) && geo.overlapArea(engine.pos.x, engine.pos.y, engine.size, engine.size, d.bounds) > 0) return true;

@@ -6,9 +6,9 @@
 //
 // Rule, per monitor: walk the windows from the top of the z-order down. Skip what cannot be "the app on screen" (invisible,
 // minimised, cloaked, our own windows, shell windows, tool windows, click-through overlays, anything covering less than
-// SUBSTANTIAL of the monitor). The first window left decides: it covers the whole monitor (2 px tolerance) and has no
-// title bar -> fullscreen; anything else -> a normal window is in front -> not fullscreen. A maximised window keeps its
-// caption, so it is never fullscreen even when the taskbar is auto-hidden and the window reaches every edge.
+// SUBSTANTIAL of the monitor). The first window left decides: it covers the whole monitor (2 px tolerance) -> fullscreen;
+// anything else -> a normal window is in front -> not fullscreen. The exception is a MAXIMISED window with a caption, which can reach every edge
+// when the taskbar auto-hides. A non-maximised window keeps counting even with a caption style: some players and borderless games keep that bit.
 // SHQueryUserNotificationState 3 (exclusive Direct3D) or 4 (presentation mode) additionally marks the foreground window's monitor.
 // State 2 (busy) is NOT used: our own overlay windows can cause it.
 
@@ -40,7 +40,7 @@ function fullscreenDisplays({ windows, displays, ns, fg, ownPids }) {
     const need = area(d.rect) * SUBSTANTIAL;
     for (const w of windows || []) {
       if (skipped(w, own) || overlap(w.rect, d.rect) < need) continue;
-      if (covers(w.rect, d.rect) && !w.caption) out.add(d.id);
+      if (covers(w.rect, d.rect) && !(w.zoomed && w.caption)) out.add(d.id);
       break;   // the first substantial window decides, either way
     }
   }

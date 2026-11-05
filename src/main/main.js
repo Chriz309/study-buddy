@@ -14,7 +14,13 @@ const devrun = require('./devrun');
 
 // --- dev mode (STUDYBUDDY_DEV=1): tray test items, a scripted command run and a log file. Off in
 // normal use; it also keeps test runs from registering a login item (see applyLoginItem).
-const DEV = process.env.STUDYBUDDY_DEV === '1';
+// Dev mode is ON only for (a) a dedicated dev build (flag baked in at build time, see electron-builder.dev.yml;
+// public builds never have it) or (b) an UNPACKAGED run with STUDYBUDDY_DEV=1. The env var is ignored in any packaged build.
+const DEV_BUILD = !!require('../../package.json').studyBuddyDevBuild;
+const DEV = DEV_BUILD || (!app.isPackaged && process.env.STUDYBUDDY_DEV === '1');
+const TOOLTIP = DEV_BUILD ? 'Study Buddy DEV BUILD' : 'Study Buddy';
+// the dev build keeps its own save/profile and single-instance lock so it can run beside the live app without touching its data
+if (DEV_BUILD) { try { app.setPath('userData', require('path').join(app.getPath('appData'), 'Study Buddy Dev')); } catch {} }
 const DEV_LOG = DEV && process.env.STUDYBUDDY_DEV_LOG ? process.env.STUDYBUDDY_DEV_LOG : null;
 function devLog(...a) {
   const line = new Date().toISOString() + ' ' + a.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
@@ -109,19 +115,31 @@ function createPetWindow() {
   const wc = petWin.webContents;
   wc.on('render-process-gone', (_e, d) => { logError('pet renderer gone', JSON.stringify(d)); reloadPetSoon(); });
   wc.on('unresponsive', () => { logError('pet renderer unresponsive', ''); reloadPetSoon(); });
-  wc.on('did-fail-load', (_e, code, desc, url, isMain) => { if (isMain) { logError('pet did-fail-load', code + ' ' + desc); reloadPetSoon(); } });
+  // code -3 = ABORTED (a navigation superseded by another): not a failure
+  wc.on('did-fail-load', (_e, code, desc, url, isMain) => { if (isMain && code !== -3) { logError('pet did-fail-load', code + ' ' + desc); reloadPetSoon(); } });
 }
-let _reloads = [];
+// Reload loops are capped: exponential back-off, then give up (the tray keeps working; "Bring buddy back" retries).
+const reloadGov = require('../shared/backoff').createGovernor({ base: 1000, max: 30000, cap: 5 });
+let _reloadPending = false, petGaveUp = false;
 function reloadPetSoon() {
-  const now = Date.now(); _reloads = _reloads.filter(t => now - t < 60000); _reloads.push(now);
+  if (_reloadPending) return;
+  const r = reloadGov.next(Date.now());
+  if (r.give) {
+    petGaveUp = true; logError('pet window', 'giving up after repeated renderer failures');
+    const w = petWin; petWin = null; try { if (w && !w.isDestroyed()) w.destroy(); } catch {}
+    if (tray) tray.setToolTip(TOOLTIP + ' (graphics problem: use "Bring buddy back" to retry)');
+    return;
+  }
+  _reloadPending = true;
   setTimeout(() => {
+    _reloadPending = false;
     if (!petWin || petWin.isDestroyed()) return;
     try {
-      if (_reloads.length > 3) { const w = petWin; petWin = null; w.destroy(); createPetWindow(); }   // keeps crashing: fresh window
+      if (r.attempt >= 4) { const w = petWin; petWin = null; w.destroy(); createPetWindow(); }   // reloads keep failing: fresh window
       else petWin.webContents.reload();
-      petWin._shown = null;
+      if (petWin) petWin._shown = null;
     } catch (e) { logError('reloadPet', e); }
-  }, 600);
+  }, r.delay);
 }
 // visible unless the user hid it, or a fullscreen app owns the display it's on
 function petShouldShow() { if (userHidden) return false; const d = ownerDisplay(); return !(d && fsDisplays.has(d.id)); }
@@ -346,7 +364,7 @@ function buildTray() {
     } else if (!img.isEmpty()) img = img.resize({ width: 16, height: 16 });
   }
   tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img);
-  tray.setToolTip('Study Buddy'); refreshTrayMenu();
+  tray.setToolTip(TOOLTIP); refreshTrayMenu();
   tray.on('click', () => openSettings());
 }
 function refreshTrayMenu() {
@@ -428,7 +446,7 @@ function showUpdatePopup(version) {
 }
 
 function initUpdates() {
-  if (isDev) return; let autoUpdater;
+  if (isDev || DEV_BUILD) return; let autoUpdater;   // the dev build never checks for updates
   try { autoUpdater = require('electron-updater').autoUpdater; } catch { return; }
   _updater = autoUpdater;
   autoUpdater.autoDownload = !IS_MAC;              // Mac: unsigned apps can't self-install
@@ -584,7 +602,7 @@ function runWatchdog() {
       scripted: !!engine.script, wrapping: !!engine._wrapping, pos: engine.pos, size: engine.size, displays: engine.displays,
     });
     for (const a of acts) {
-      if (a === 'recreateWindow') { logError('watchdog', 'pet window missing; recreating'); createPetWindow(); }
+      if (a === 'recreateWindow') { if (petGaveUp) continue; logError('watchdog', 'pet window missing; recreating'); createPetWindow(); }
       else if (a === 'rescue') { devLog('watchdog: sprite off-screen, rescuing', engine.pos); engine.rescue(); resetInteraction(); }
       else if (a === 'releaseDrag') { devLog('watchdog: stuck drag released'); resetInteraction(); }
       else if (a === 'fixBounds') { try { petWin.setBounds(petWin._want); devLog('watchdog: window bounds re-applied'); } catch {} }
@@ -599,6 +617,7 @@ function refreshAfterWake() {
 function bringBuddyBack() {
   try {
     userHidden = false; fsDisplays = new Set();
+    if (petGaveUp) { petGaveUp = false; reloadGov.reset(); if (tray) tray.setToolTip(TOOLTIP); }   // manual retry
     if (!petWin || petWin.isDestroyed()) createPetWindow();
     engine.setWorld(screen.getAllDisplays());
     toy.destroy();

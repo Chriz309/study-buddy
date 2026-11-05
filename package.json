@@ -13,6 +13,7 @@
     "start": "electron .",
     "test": "node --test test/*.test.js",
     "dist": "electron-builder",
+    "dist:dev": "electron-builder --win nsis --publish never --config electron-builder.dev.yml",
     "pack": "electron-builder --dir"
   },
   "devDependencies": {

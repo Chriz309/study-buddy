@@ -1,0 +1,18 @@
+# Dev package: `npm run dist:dev`. Same app, but flagged as a dev build (src/main/main.js reads
+# studyBuddyDevBuild): own appId + userData folder, no auto-update, no login item, DEV tray items.
+# Public builds use electron-builder.yml and never have the flag.
+extends: ./electron-builder.yml
+appId: com.chrishook.studybuddy.dev
+productName: Study Buddy Dev
+directories:
+  output: dist-dev
+  buildResources: assets
+extraMetadata:
+  # Electron derives the default userData folder (and Chromium's single-instance lock) from the app name
+  # BEFORE main.js runs, so the dev build must carry its own name in package.json or it would share the real profile.
+  productName: Study Buddy Dev
+  studyBuddyDevBuild: true
+win:
+  target:
+    - target: nsis
+  artifactName: "StudyBuddy-Dev-Setup-${version}.${ext}"

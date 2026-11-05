@@ -77,6 +77,13 @@ function load() {
   // characters live in the catalog (existing `owned`/`active` stay valid) and new settings are
   // filled in from DEFAULTS by the merge above. Just stamp the version.
   if (state.version < 5) { state.version = 5; save(); }
+  // migration → v6 (v0.7.1): desktop mischief is now ON by default. A save from before has deskMischief null ("never chosen", which used to mean off
+  // in public builds): switch it on ONCE. An explicit false (the user turned it off, or used "Stop mischief") is left alone.
+  if (state.version < 6) {
+    if (state.settings.deskMischief == null) state.settings = { ...state.settings, deskMischief: true };
+    state.version = 6;
+    save();
+  }
   // an unknown active character (e.g. a save from a newer build) falls back to Blob
   if (!state.owned.includes(state.active)) state.active = 'blob';
   return state;

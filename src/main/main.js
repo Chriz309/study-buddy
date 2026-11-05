@@ -1,7 +1,8 @@
 'use strict';
 const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, shell, dialog, powerMonitor, desktopCapturer } = require('electron');
 const path = require('path');
-const fgProbe = require('./fgprobe');   // Windows foreground-window probe (one long-lived PowerShell)
+const fgProbe = require('./fgprobe');   // Windows foreground-window + fullscreen probe (one long-lived PowerShell)
+const fsdetect = require('./fullscreen');   // pure: which displays are covered by a fullscreen app
 const store = require('./store');
 const engine = require('./engine');
 const { CHARACTERS, CURRENCY, DEV_TOOLS, GUMBALL_COST, RARITIES, PERSONALITIES, characterById, rollPool, lockedIds, tierUnlocked } = require('../shared/catalog');
@@ -152,8 +153,13 @@ function reloadPetSoon() {
     } catch (e) { logError('reloadPet', e); }
   }, r.delay);
 }
-// visible unless the user hid it, or a fullscreen app owns the display it's on
-function petShouldShow() { if (userHidden) return false; const d = ownerDisplay(); return !(d && fsDisplays.has(d.id)); }
+// visible unless the user hid it, or the sprite's RECT touches a display covered by a fullscreen app (not just its centre)
+function petShouldShow() { return !userHidden && !spriteTouchesFullscreen(); }
+function spriteTouchesFullscreen() {
+  if (!fsDisplays.size) return false;
+  for (const d of screen.getAllDisplays()) if (fsDisplays.has(d.id) && geo.overlapArea(engine.pos.x, engine.pos.y, engine.size, engine.size, d.bounds) > 0) return true;
+  return false;
+}
 // Toggle visibility WITHOUT hide()/show(): on Windows that cycle resets the
 // transparent/click-through window styles and left the pet un-clickable after
 // exiting fullscreen. Instead we fade opacity + drop topmost so it neither shows
@@ -178,13 +184,11 @@ function showBuddy() { userHidden = false; if (!petWin || petWin.isDestroyed()) 
 function hideBuddy() { userHidden = true; applyVisibility(); }
 function overlaysVisible() { return !userHidden; }
 
-function ownerDisplay() {
-  const cx = engine.pos.x + engine.size / 2, cy = engine.pos.y + engine.size / 2;
-  for (const d of screen.getAllDisplays()) { const b = d.bounds; if (cx >= b.x && cx < b.x + b.width && cy >= b.y && cy < b.y + b.height) return d; }
-  let best = null, bd = Infinity;
-  for (const d of screen.getAllDisplays()) { const b = d.bounds; const dd = Math.abs((b.x + b.width / 2) - cx); if (dd < bd) { bd = dd; best = d; } }
-  return best;
-}
+// The engine's world: every display, except the ones a fullscreen app covers (so the sprite never roams onto them).
+// If every display is covered the full list stays (the sprite is hidden and idle then, see loopOnce).
+function worldDisplays() { const all = screen.getAllDisplays(), free = all.filter(d => !fsDisplays.has(d.id)); return free.length ? free : all; }
+function syncWorld() { engine.setWorld(worldDisplays()); }
+function allDisplaysFullscreen() { const all = screen.getAllDisplays(); return all.length > 0 && all.every(d => fsDisplays.has(d.id)); }
 
 // --- engine loop (60fps): tick, route pet to its monitor, manage mouse capture
 function startEngine() {
@@ -198,7 +202,7 @@ function startEngine() {
     toy: (cmd) => { try { toy.handle(cmd); } catch (e) { logError('toy', e); } },   // chase toy lives in its own window
   }, Date.now());
   engine.pos = { x: 0, y: 0 };
-  engine.setWorld(screen.getAllDisplays());
+  syncWorld();
   // start somewhere sensible on the primary
   const pb = screen.getPrimaryDisplay().workArea;
   engine.pos = { x: pb.x + pb.width * 0.4, y: pb.y + pb.height - engine.size };
@@ -208,6 +212,7 @@ function startEngine() {
   setInterval(() => { try { loopOnce(); } catch (e) { logError('engine loop', e); } }, 1000 / 60);
   function loopOnce() {
     if (!petWin || petWin.isDestroyed()) return;
+    if (fsDisplays.size && allDisplaysFullscreen()) { applyVisibility(); return; }   // every display is covered: hidden and idle, nothing moves
     // CPU saver: when the pet is resting (sitting / idle / asleep, not being dragged
     // or carried along) run this loop at 20fps instead of 60. Anything that moves
     // — walking, falling, jumping, climbing, dragging — still gets the full 60fps.
@@ -220,6 +225,7 @@ function startEngine() {
     engine.setCursor({ x: cur.x, y: cur.y }); mischiefActivity.note(cur.x, cur.y, now);   // the only per-frame cost of desktop mischief: one EMA update
     if (grabOff && engine.dragging) engine.dragTo(cur.x - grabOff.dx + engine.size / 2, cur.y - grabOff.dy + engine.size / 2);
     engine.tick(now);
+    if (fsDisplays.size && spriteTouchesFullscreen()) moveOffFullscreen();   // it wandered or was dropped onto a covered display
     applyVisibility();
     if (!engine.script && toy.isActive()) toy.destroy();     // never leave the toy window behind
     if (petWin._shown) { positionPetWindow(); sendPet(); setPetInteractive(cur); keepOnTop(); }
@@ -285,48 +291,81 @@ function syncActiveChar() {
   scheduleAntic();
 }
 
-// --- window awareness: perch on the active window's top edge -------------
-// Reads the foreground window rect on Windows and feeds the engine a "ledge".
-// Fails safe: any error/uncertainty -> no ledge -> normal desktop behaviour.
-const SHELL_CLASSES = new Set(['Progman', 'WorkerW', '']);
+// --- window awareness + fullscreen detection ---------------------------------
+// ONE probe (fgprobe.js) per poll returns the foreground window, the shell's notification state and the z-ordered window list, all in
+// physical pixels. fullscreen.js decides which displays a fullscreen app covers; the foreground rect also gives the engine a "ledge".
+// Fails safe: any error/uncertainty -> no ledge; a failed probe HOLDS the last fullscreen state (capped at ~2 minutes, see fullscreen.createTracker).
+const OWN_PIDS = new Set([process.pid]);
+const fsTracker = fsdetect.createTracker();
 let fgBusy = false;
 let fsDisplays = new Set();   // display ids currently covered by a fullscreen app
+let pendingPopup = null;      // { version }: an update popup that is waiting for the fullscreen app to go away
+const sameIds = (a, b) => a.size === b.size && [...a].every(id => b.has(id));
+function physDisplays() {     // physical-pixel rect per display, so a window rect compares directly with it on any DPI mix
+  return screen.getAllDisplays().map(d => {
+    let r = d.bounds; try { r = screen.dipToScreenRect(null, d.bounds); } catch {}
+    return { id: d.id, rect: { x: r.x, y: r.y, w: r.width, h: r.height } };
+  });
+}
 function pollForeground() {
   try {
-    if (process.platform !== 'win32') { engine.setLedge(null); if (fsDisplays.size) { fsDisplays = new Set(); applyVisibility(); } return; }
-    if (userHidden) { engine.setLedge(null); return; }   // nothing on screen — don't spawn the probe
+    if (process.platform !== 'win32') { engine.setLedge(null); return; }
+    if (userHidden && !pendingPopup) { engine.setLedge(null); return; }   // nothing on screen: don't spawn the probe
     if (fgBusy) return;
     const aware = store.get().settings.windowAware;
     fgBusy = true;
     fgProbe.query((stdout) => {
       fgBusy = false;
       try {
-        if (!stdout) { engine.setLedge(null); if (++fgEmpty >= 2) clearFullscreen(); return; }   // probe lost the foreground window (lock screen, UAC, closed game)
-        fgEmpty = 0;
-        const [rectPart, cls = ''] = stdout.trim().split('|');
-        const m = rectPart.split(',').map(Number);
-        if (m.length !== 4 || m.some(n => !isFinite(n))) { engine.setLedge(null); return; }
-        const [l, t, r, b] = m; if (r <= l || b <= t) { engine.setLedge(null); return; }
-        const tl = screen.screenToDipPoint({ x: l, y: t }), br = screen.screenToDipPoint({ x: r, y: b });
-        const x0 = tl.x, y0 = tl.y, x1 = br.x, y1 = br.y, w = x1 - x0, h = y1 - y0;
-        const d = screen.getDisplayNearestPoint({ x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2) });
-        const wa = d.workArea, bd = d.bounds;
-        // --- fullscreen detection: covers the FULL monitor (incl. taskbar) and not the shell ---
-        const isShell = SHELL_CLASSES.has((cls || '').trim());
-        const fullscreen = !isShell && x0 <= bd.x + 2 && y0 <= bd.y + 2 && x1 >= bd.x + bd.width - 2 && y1 >= bd.y + bd.height - 2;
-        const nextFs = new Set(fsDisplays);
-        if (fullscreen) nextFs.add(d.id); else nextFs.delete(d.id);
-        if (nextFs.size !== fsDisplays.size || [...nextFs].some(id => !fsDisplays.has(id))) { fsDisplays = nextFs; applyVisibility(); }
-        // --- ledge: perch on a normal floating window's top edge ---
-        const coversWork = (x0 <= wa.x + 4 && x1 >= wa.x + wa.width - 4 && y0 <= wa.y + 4);
-        const normal = aware && !fullscreen && !isShell && w > 220 && h > 120 && y0 > wa.y + 48 && y0 < wa.y + wa.height - 80 && !coversWork;
-        engine.setLedge(normal ? { x0: x0 + 8, x1: x1 - 8, y: y0 } : null);
+        const p = stdout ? fsdetect.parseProbe(stdout) : null;
+        if (!p) { engine.setLedge(null); setFullscreen(fsTracker.update(null, Date.now())); return; }   // failed probe: hold the last state
+        setFullscreen(fsTracker.update(fsdetect.fullscreenDisplays({ windows: p.windows, displays: physDisplays(), ns: p.ns, fg: p.fg, ownPids: OWN_PIDS }), Date.now()));
+        engine.setLedge(aware ? ledgeFor(p.fg) : null);
       } catch { engine.setLedge(null); }
     });
   } catch { fgBusy = false; engine.setLedge(null); }
 }
-let fgEmpty = 0;
-function clearFullscreen() { if (fsDisplays.size) { fsDisplays = new Set(); applyVisibility(); } }
+// perch on a normal floating foreground window's top edge (DIP). null = no ledge.
+function ledgeFor(fg) {
+  if (!fg || fsdetect.SHELL_CLASSES.has((fg.cls || '').trim())) return null;
+  const dr = screen.screenToDipRect(null, { x: fg.rect.x, y: fg.rect.y, width: fg.rect.w, height: fg.rect.h });   // converts the whole rect: the corner trick breaks on mixed DPI
+  const x0 = dr.x, y0 = dr.y, x1 = dr.x + dr.width, y1 = dr.y + dr.height, w = dr.width, h = dr.height;
+  const d = screen.getDisplayNearestPoint({ x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2) });
+  if (fsDisplays.has(d.id)) return null;
+  const wa = d.workArea;
+  const coversWork = (x0 <= wa.x + 4 && x1 >= wa.x + wa.width - 4 && y0 <= wa.y + 4);
+  const normal = w > 220 && h > 120 && y0 > wa.y + 48 && y0 < wa.y + wa.height - 80 && !coversWork;
+  return normal ? { x0: x0 + 8, x1: x1 - 8, y: y0 } : null;
+}
+// a new set of fullscreen displays: log it, silence everything that must not run over a movie, keep the sprite on a free display
+function setFullscreen(next) {
+  if (sameIds(next, fsDisplays)) return;
+  fsDisplays = next;
+  devLog('fullscreen', { displays: [...next] });   // display ids only
+  if (next.size) stopFullscreenActivity();
+  moveOffFullscreen();
+  syncWorld();
+  applyVisibility();
+  if (!next.size && pendingPopup) { const v = pendingPopup.version; pendingPopup = null; showUpdatePopup(v); }
+}
+// antics, the chase toy, pranks and their overlays stop at once; an update popup that is already up goes away and comes back later
+function stopFullscreenActivity() {
+  try { engine.cancelScript('fullscreen'); } catch {}
+  try { toy.destroy(); } catch {}
+  try { if (mischief) mischief.stop('fullscreen'); } catch {}
+  if (updatePopupWin && !updatePopupWin.isDestroyed()) { pendingPopup = { version: updatePopupVersion }; closeUpdatePopup(); }
+}
+// if the sprite is on (or touches) a covered display and another display is free, move it across while it is hidden
+function moveOffFullscreen() {
+  if (!fsDisplays.size || !spriteTouchesFullscreen()) return;
+  const free = screen.getAllDisplays().filter(d => !fsDisplays.has(d.id));
+  if (!free.length) return;   // all covered: stays hidden where it is
+  syncWorld();
+  const cur = screen.getCursorScreenPoint();
+  engine.rescue(geo.homePosition(engine.size, free, cur));
+  resetInteraction();
+  devLog('sprite moved off the fullscreen display');
+}
 
 // --- settings / shop window ---------------------------------------------
 function openSettings() {
@@ -427,7 +466,7 @@ let _updater = null;          // the electron-updater instance (once initialised
 let _installing = false;      // guard so we only trigger the install once
 let _promptOpen = false;      // guard so we only show the restart dialog once
 
-let updatePopupWin = null;
+let updatePopupWin = null, updatePopupVersion = '';
 
 // Quit everything and let NSIS swap in the new version, then relaunch.
 function installUpdateNow() {
@@ -452,6 +491,8 @@ function closeUpdatePopup() {
 // when only the sprite is visible — no need to open Settings.
 function showUpdatePopup(version) {
   if (_installing) return;
+  if (fsDisplays.size) { pendingPopup = { version }; devLog('update popup waits for the fullscreen app'); return; }   // never over a movie / game
+  pendingPopup = null; updatePopupVersion = version;
   if (updatePopupWin && !updatePopupWin.isDestroyed()) { updatePopupWin.show(); return; }
   const wa = screen.getPrimaryDisplay().workArea;
   const W = 360, H = 150;
@@ -635,15 +676,15 @@ function runWatchdog() {
   } catch (e) { logError('watchdog', e); }
 }
 function refreshAfterWake() {
-  try { engine.setWorld(screen.getAllDisplays()); reassertWindowStyles(); runWatchdog(); } catch (e) { logError('wake', e); }
+  try { syncWorld(); reassertWindowStyles(); runWatchdog(); } catch (e) { logError('wake', e); }
 }
 // Tray item: recentre the sprite on the screen the mouse is on and reset all interaction state.
 function bringBuddyBack() {
   try {
-    userHidden = false; fsDisplays = new Set();
+    userHidden = false;
     if (petGaveUp) { petGaveUp = false; reloadGov.reset(); if (tray) tray.setToolTip(TOOLTIP); }   // manual retry
     if (!petWin || petWin.isDestroyed()) createPetWindow();
-    engine.setWorld(screen.getAllDisplays());
+    syncWorld();
     toy.destroy();
     engine.rescue(geo.homePosition(engine.size, engine.displays, screen.getCursorScreenPoint()));
     resetInteraction();
@@ -669,8 +710,8 @@ function scheduleAntic(delay) {
 function anticBlocked() {
   const s = store.get().settings;
   if (!petWin || petWin.isDestroyed() || userHidden || !petWin._shown) return 'hidden';
+  if (fsDisplays.size) return 'fullscreen';   // any covered display: no antics anywhere
   if (s.stayPut || s.reduceMotion || s.paused || !s.antics) return 'quiet';
-  if (!petShouldShow()) return 'fullscreen';
   engine.settle();
   return engine.canStartScript(true) ? null : 'busy';
 }
@@ -691,11 +732,11 @@ function startAntic(name) {
 }
 
 // --- desktop mischief ----------------------------------------------------------------------------
-// Opt-in (default OFF in public builds, ON in dev builds). Overlay illusions only: see src/main/mischief/manager.js.
+// ON by default for everyone since 0.7.1 (store migration v6; an explicit false stays off). Overlay illusions only: see src/main/mischief/manager.js.
 const mischiefActivity = mlogic.createActivity();
 let devDuring = null;
 let mischief = null, mischiefHost = null, mischiefChaos = false, mfFlags = { locked: false, suspended: false }, devCursor = null, devAbortAt = 0;
-function mischiefEnabled() { if (process.platform !== 'win32') return false; const v = store.get().settings.deskMischief; return v == null ? DEV : !!v; }
+function mischiefEnabled() { if (process.platform !== 'win32') return false; const v = store.get().settings.deskMischief; return v == null ? true : !!v; }
 function petEventOut(type, data) { if (petWin && !petWin.isDestroyed()) petWin.webContents.send('petEvent', Object.assign({ type }, data || {})); }
 function initMischief() {
   if (process.platform !== 'win32') return;   // other platforms: nothing is created, nothing is requested
@@ -787,6 +828,10 @@ function startDevRun() {
         case 'bringback': bringBuddyBack(); break;
         case 'prank': devPrank(step.arg); break;
         case 'set': { const [k, v] = (step.arg || '').split('='); if (k) applySettingsPatch({ [k]: /^-?[0-9]+(\.[0-9]+)?$/.test(v) ? +v : v === 'true' ? true : v === 'false' ? false : v }); break; }
+        case 'fsstat': devLog('FSSTAT', { fs: [...fsDisplays], shown: petWin && petWin._shown, opacity: petWin && !petWin.isDestroyed() ? petWin.getOpacity() : null, interactive: petWin && petWin._interactive, pos: { x: Math.round(engine.pos.x), y: Math.round(engine.pos.y) },
+          script: engine.script && engine.script.name, anticBlocked: anticBlocked(), prankBlocked: mischief ? mischief.blocked(false) : 'no-manager', world: engine.displays.map(d => d.id), probeAlive: fgProbe._test.state().alive }); break;
+        case 'antic': onAnticTimer(); break;                                  // the real scheduled path (gates included), not the forced dev trigger
+        case 'prankgo': if (mischief) mischief.start({}).then(r => devLog('prankgo', r && r.status, r && r.reason)); break;   // real path: respects every gate
         case 'mstop': if (mischief) mischief.stop('stopped'); break;
         case 'mchaos': mischiefChaos = true; if (mischief) mischief.setChaos(true); break;
         case 'mnear': { const r = mischief && mischief.targets(); if (r && r[0]) { devAbortAt = Date.now(); devCursor = { x: Math.round(r[0].x + r[0].w / 2), y: Math.round(r[0].y + r[0].h / 2) }; } break; }
@@ -824,10 +869,9 @@ function relayout() {
   clearTimeout(relayoutTimer);
   relayoutTimer = setTimeout(() => {
     try {
-      engine.setWorld(screen.getAllDisplays());
       const ids = new Set(screen.getAllDisplays().map(d => d.id));          // forget fullscreen flags of unplugged monitors
-      for (const id of [...fsDisplays]) if (!ids.has(id)) fsDisplays.delete(id);
-      applyVisibility(); runWatchdog();
+      fsDisplays = fsTracker.forget(ids);
+      syncWorld(); moveOffFullscreen(); applyVisibility(); runWatchdog();
     } catch (e) { logError('relayout', e); }
   }, 300);
 }

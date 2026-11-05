@@ -27,7 +27,7 @@ test('tier gating: the hero only enters the gumball machine once every tier-1 bu
   assert.equal(cat.tierUnlocked(2, ['blob']), false); assert.equal(cat.tierUnlocked(1, []), true);
 });
 
-test('defaults: antics on, version 5', () => { assert.equal(cat.DEFAULTS.settings.antics, true); assert.equal(cat.DEFAULTS.version, 5); });
+test('defaults: antics on, desktop mischief on, version 6', () => { assert.equal(cat.DEFAULTS.settings.antics, true); assert.equal(cat.DEFAULTS.settings.deskMischief, true); assert.equal(cat.DEFAULTS.version, 6); });
 
 // store.js needs Electron's `app`: stub it and point userData at a temp dir
 function loadStoreWith(saveObj) {
@@ -47,7 +47,7 @@ test('migration: an existing v4 save loads unchanged (owned, active, names, spar
     settings: { size: 110, speed: 1.4, personality: 'hyper', mischief: 60, startOnBoot: false, stayPut: true, reduceMotion: true } };
   const { st, dir } = loadStoreWith(old);
   try {
-    assert.equal(st.version, 5);
+    assert.equal(st.version, 6);
     assert.deepEqual(st.owned, ['blob', 'ghost', 'cat']); assert.equal(st.active, 'cat'); assert.equal(st.sparks, 12345.5);
     assert.deepEqual(st.names, { cat: 'Mittens' }); assert.deepEqual(st.levels, { cat: 3 }); assert.deepEqual(st.colors, { cat: 'grey' });
     assert.equal(st.settings.size, 110); assert.equal(st.settings.speed, 1.4); assert.equal(st.settings.startOnBoot, false); assert.equal(st.settings.stayPut, true);
@@ -59,7 +59,7 @@ test('migration: a save that names an unknown/unowned active buddy falls back to
   let r = loadStoreWith({ version: 5, owned: ['blob'], active: 'mystery', settings: {} });
   try { assert.equal(r.st.active, 'blob'); } finally { fs.rmSync(r.dir, { recursive: true, force: true }); }
   r = loadStoreWith('{ not json');
-  try { assert.deepEqual(r.st.owned, ['blob']); assert.equal(r.st.version, 5); } finally { fs.rmSync(r.dir, { recursive: true, force: true }); }
+  try { assert.deepEqual(r.st.owned, ['blob']); assert.equal(r.st.version, 6); } finally { fs.rmSync(r.dir, { recursive: true, force: true }); }
   r = loadStoreWith(undefined);
   try { assert.equal(r.st.settings.antics, true); } finally { fs.rmSync(r.dir, { recursive: true, force: true }); }
 });

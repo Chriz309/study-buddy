@@ -59,9 +59,9 @@ test('Windows only: probe and manager refuse other platforms; no always-on inter
   assert.equal((mgr.match(/setTimeout\(onTimer/g) || []).length, 1, 'one single scheduling timeout');
 });
 
-test('default OFF in public builds, ON in dev builds (opt-in)', () => {
+test('default ON for everyone (0.7.1): unset means on, an explicit false stays off', () => {
   const cat = require('../src/shared/catalog');
-  assert.equal(cat.DEFAULTS.settings.deskMischief, null);
+  assert.equal(cat.DEFAULTS.settings.deskMischief, true);
   const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.js'), 'utf8');
-  assert.ok(/return v == null \? DEV : !!v;/.test(main), 'unset means "dev build only"');
+  assert.ok(main.includes('return v == null ? true : !!v;'), 'unset (null) means on, in public and dev builds');
 });

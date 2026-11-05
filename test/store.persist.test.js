@@ -29,3 +29,37 @@ test('settings patches (mischief slider, desktop mischief frequency) are written
     assert.equal(again.get().settings.antics, true, 'untouched settings keep their defaults');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// migration -> v6 (0.7.1): desktop mischief is ON by default. Saves from before that have deskMischief null ("never chosen"): switch it on once.
+// An explicit false (the user turned it off, or used "Stop mischief") must stay off.
+function saveWith(dir, version, deskMischief) {
+  const settings = deskMischief === undefined ? {} : { deskMischief };
+  fs.writeFileSync(path.join(dir, 'buddy-save.json'), JSON.stringify({ version, sparks: 5, owned: ['blob'], active: 'blob', settings }));
+}
+test('migration v6: deskMischief null/missing -> true, explicit false stays false, explicit true stays true', () => {
+  for (const [saved, want] of [[null, true], [undefined, true], [false, false], [true, true]]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-mig-'));
+    try {
+      saveWith(dir, 5, saved);
+      const store = loadStore(dir); store.load();
+      assert.equal(store.get().settings.deskMischief, want, 'saved ' + saved);
+      assert.equal(store.get().version, 6);
+      store.saveNow();
+      const again = loadStore(dir); again.load();
+      assert.equal(again.get().settings.deskMischief, want, 'after a second load, saved ' + saved);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+test('migration v6 runs once: a v6 save with null is left alone (and a later explicit false is never re-enabled)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-mig-'));
+  try {
+    saveWith(dir, 6, false);
+    const store = loadStore(dir); store.load();
+    assert.equal(store.get().settings.deskMischief, false);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+test('a fresh install has desktop mischief on', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-mig-'));
+  try { const store = loadStore(dir); store.load(); assert.equal(store.get().settings.deskMischief, true); assert.equal(store.get().version, 6); }
+  finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

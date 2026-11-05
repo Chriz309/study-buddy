@@ -54,7 +54,7 @@ const PERSONALITIES = ['chill', 'hyper', 'sleepy', 'naughty'];
 const IMPLEMENTED_IDS = CHARACTERS.filter(c => c.implemented).map(c => c.id);
 
 const DEFAULTS = {
-  version: 5,
+  version: 6,
   sparks: 800,                 // a little to play with — enough for a first gumball crank
   active: 'blob',
   owned: ['blob'],             // start with just Blob; everyone else lives in the gumball machine
@@ -79,7 +79,7 @@ const DEFAULTS = {
     windowAware: true,         // perch on the active window's top edge (Windows)
     showAll: false,            // show every owned pet at once (future multi-pet)
     antics: true,              // now-and-then special antics (cat butterfly chase, Captain Cram's stunts)
-    deskMischief: null,        // desktop mischief (overlay illusions, Windows). null = never chosen: OFF in public builds, ON in dev builds
+    deskMischief: true,        // desktop mischief (overlay illusions, Windows): ON by default since 0.7.1. An explicit false (turned off, or tray "Stop mischief") stays off
     deskMischiefFreq: 'normal',// rare | normal | chaos
   },
 };

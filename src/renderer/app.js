@@ -243,7 +243,12 @@
   // safety: if the pointer is ever lost mid-drag (passthrough flips, focus loss), release
   window.addEventListener('blur',()=>{ if(dragId!==null){ if(dragging){ dragging=false; stopPing(); window.buddy.petRelease(); } dragId=null; moved=false; } });
   // WebGL context lost (GPU reset, driver update, out of memory): the sprite would vanish while its window kept blocking clicks. Reload to rebuild.
-  glc.addEventListener('webglcontextlost',(e)=>{ e.preventDefault(); ready=false; setTimeout(()=>location.reload(),1500); });
-  glc.addEventListener('webglcontextrestored',()=>location.reload());
+  // Reloads back off exponentially and stop after a few tries (a broken GPU must not loop forever; the tray still works).
+  function reloadGuarded(){ let n=0, t=0; try{ n=+sessionStorage.getItem('sbReloads')||0; t=+sessionStorage.getItem('sbReloadT')||0; if(Date.now()-t>120000) n=0; }catch{}
+    const g=window.Backoff.createGovernor({base:1500,max:30000,cap:4}); let r; for(let i=0;i<=n;i++) r=g.next(Date.now());
+    if(r.give) return; try{ sessionStorage.setItem('sbReloads',String(n+1)); sessionStorage.setItem('sbReloadT',String(Date.now())); }catch{}
+    setTimeout(()=>location.reload(),r.delay); }
+  glc.addEventListener('webglcontextlost',(e)=>{ e.preventDefault(); ready=false; reloadGuarded(); });
+  glc.addEventListener('webglcontextrestored',()=>reloadGuarded());
   window.addEventListener('dblclick',(e)=>{ if(overPet(e.clientX,e.clientY)) window.buddy.openSettings(); });
 })();

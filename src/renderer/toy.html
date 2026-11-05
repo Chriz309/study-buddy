@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:;" />
+<title>toy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; pointer-events: none; }
+  /* a butterfly: two wing pairs that flap by squashing horizontally; flips to face its flight direction */
+  body { display: flex; align-items: center; justify-content: center; }
+  svg { width: 100%; height: 100%; overflow: visible; transform: scaleX(var(--d, 1)); filter: drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+  body[data-dir="-1"] { --d: -1; }
+  .wing { transform-box: fill-box; transform-origin: 50% 50%; animation: flap .16s ease-in-out infinite alternate; }
+  .wing.l { transform-origin: 100% 50%; }
+  .wing.r { transform-origin: 0% 50%; animation-delay: 0s; }
+  @keyframes flap { from { transform: scaleX(1); } to { transform: scaleX(.18); } }
+  .bob { animation: bob .5s ease-in-out infinite alternate; }
+  @keyframes bob { from { transform: translateY(-2px) rotate(-6deg); } to { transform: translateY(2px) rotate(6deg); } }
+</style>
+</head>
+<body data-dir="1">
+<svg viewBox="-30 -30 60 60" xmlns="http://www.w3.org/2000/svg">
+  <g class="bob">
+    <g class="wing l"><path d="M0,-2 C-10,-24 -28,-20 -26,-6 C-25,4 -12,4 0,0 Z" fill="#ff9f43" stroke="#7a3b00" stroke-width="1.4"/>
+      <path d="M0,1 C-8,2 -22,8 -18,18 C-14,24 -4,14 0,3 Z" fill="#ffd166" stroke="#7a3b00" stroke-width="1.4"/>
+      <circle cx="-17" cy="-9" r="3.2" fill="#fff6d6"/></g>
+    <g class="wing r"><path d="M0,-2 C10,-24 28,-20 26,-6 C25,4 12,4 0,0 Z" fill="#ff9f43" stroke="#7a3b00" stroke-width="1.4"/>
+      <path d="M0,1 C8,2 22,8 18,18 C14,24 4,14 0,3 Z" fill="#ffd166" stroke="#7a3b00" stroke-width="1.4"/>
+      <circle cx="17" cy="-9" r="3.2" fill="#fff6d6"/></g>
+    <rect x="-1.8" y="-10" width="3.6" height="22" rx="1.8" fill="#3b2410"/>
+    <path d="M-1,-10 C-5,-18 -8,-20 -10,-19 M1,-10 C5,-18 8,-20 10,-19" stroke="#3b2410" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>
+</body>
+</html>

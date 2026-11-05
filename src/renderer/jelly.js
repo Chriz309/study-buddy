@@ -26,11 +26,15 @@
       this.ready=false;
     }
     load(img){ const gl=this.gl,N=this.N;
+      // free the previous texture: every walk-frame / blink swap used to leak one GPU texture
+      // until GC, which on long sessions could exhaust GPU memory and lose the WebGL context
+      if(this.tex) gl.deleteTexture(this.tex);
       this.tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,this.tex);
+      const filt=this.nearest?gl.NEAREST:gl.LINEAR;   // pixel-art characters stay crisp
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
       gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
-      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,filt);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,filt);
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
       const uv=[],idx=[]; for(let j=0;j<=N;j++)for(let i=0;i<=N;i++)uv.push(i/N,j/N);

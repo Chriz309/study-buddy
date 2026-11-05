@@ -2,7 +2,7 @@
 (function () {
   const q = new URLSearchParams(location.search);
   const id = q.get('id') || '', name = q.get('name') || 'New buddy', rarity = (q.get('rarity') || '').toLowerCase();
-  const EMOJI = { blob: '🫧', ghost: '👻', cat: '🐱', chirp: '🐤', quack: '🦆', fox: '🦊', octo: '🐙', ember: '🐲' };
+  const EMOJI = { blob: '🫧', ghost: '👻', cat: '🐱', chirp: '🐤', quack: '🦆', fox: '🦊', octo: '🐙', ember: '🐲', hero: '🦸' };
   const RAR = { common:['Common','#9aa4b2'], uncommon:['Uncommon','#54e0a0'], rare:['Rare','#53b9ff'], unique:['Unique','#c08bff'], legendary:['Legendary','#ffb43f'] };
 
   // egg art (same in both clipped halves so they form one egg)

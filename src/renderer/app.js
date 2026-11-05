@@ -10,19 +10,24 @@
   const CHARS={
     blob:  {art:window.BLOB_ART,  float:false, swirl:false, vectorFace:true},
     ghost: {art:window.GHOST_ART, float:true,  swirl:true,  vectorFace:true},
-    cat:   {poses:(window.CAT_ART||{}), float:false, swirl:false, vectorFace:false, directional:true},
+    cat:   {poses:(window.CAT_ART||{}), float:false, swirl:false, vectorFace:false, directional:true, walk:['side','side2','side3','side4']},
+    // Captain Cram: 16-bit pixel art. nearest-neighbour texture + a stiffer, calmer jelly so the pixels stay crisp
+    hero:  {poses:(window.HERO_ART||{}), float:false, swirl:false, vectorFace:false, directional:true, nearest:true, jelly:{k:300,damp:9.5,squish:0.7},
+            walk:['walk1','walk2','walk3','walk4']},
   };
   // per-pose height scale so a lying cat doesn't look bigger than a standing one
   // heights chosen so the cat's head is the same size in every pose (all frames share one art scale)
   const POSE_H={ side:1, side2:1, side3:1, side4:1, front:1.052, sit:1.067, lay:0.718 };
   // 4-frame walk cycle: stride → passing → (other) stride → passing
-  const WALK=['side','side2','side3','side4'];
+  let WALK=['side','side2','side3','side4'];
+  const HERO_H=1.25;   // the 40px canvas has margins: draw it 1.25x so the figure is as tall as the size setting
   // cat coat colours (the orange art recoloured via filters) — hue-rotate looked broken on it
   const CAT_COLORS={ ginger:'', grey:'grayscale(1) brightness(1.02)', black:'grayscale(1) brightness(.42) contrast(1.15)', white:'grayscale(1) brightness(1.72) contrast(.82)' };
   let dpr=Math.max(1,window.devicePixelRatio||1);
   let jelly, face, settings=null, ready=false, curChar='blob', floatMode=false, images={}, poseImgs={};
   let vectorFace=true, directional=false, curPose=null, heightScale=1;
   let boostUntil=0;   // full-rate drawing until this time (after pats/feeds/etc.)
+  let jellyScale=1, swayIdx=0, swayT=0; const trail=$('#trail');
   let walkDist=0, walkFrame=0, breatheT=0, blinkT=0, blinkWait=3, blinking=false;
   let pet={show:false,x:0,y:0,size:140,state:'idle',facing:1};
   let disp={x:0,y:0}, lastState='idle', dragging=false, speechTimer=0, zzzTimer=0, idleAcc=0, lastSize=0;
@@ -40,11 +45,17 @@
     if(curChar==='cat'){ f = CAT_COLORS[(colorsMap&&colorsMap.cat)||'ginger'] || ''; }
     else { const h=(colorsMap&&colorsMap[curChar])||0; f = h?('hue-rotate('+h+'deg)'):''; }
     glc.style.filter=f; faceSvg.style.filter=f; }
-  function applyFacing(){ glc.style.transform = (directional && pet.facing<0) ? 'scaleX(-1)' : ''; }
-  function poseFor(st){ switch(st){ case 'walk': case 'climb': case 'fall': return 'side'; case 'sleep': return 'lay'; case 'sit': return 'sit'; default: return 'front'; } }
+  // flip to face travel; the dive pose is the flying pose rotated head-down about the sprite's centre
+  function applyFacing(){
+    const flip=(directional && pet.facing<0) ? 'scaleX(-1)' : '', rot=(curChar==='hero' && pet.state==='dive') ? ' rotate(90deg)' : '';
+    glc.style.transformOrigin=(pet.x+pet.size/2)+'px '+(pet.y+pet.size-heightScale*pet.size/2)+'px'; glc.style.transform=(flip+rot).trim(); }
+  function poseFor(st){
+    if(curChar==='hero'){ switch(st){ case 'walk': case 'run': case 'climb': return 'walk1'; case 'fly': case 'dive': case 'fall': return 'fly'; case 'flex': return 'flex';
+      case 'land': case 'crouch': return 'land'; case 'sleep': return 'sleep'; case 'happy': case 'drag': return 'happy'; default: return 'idle'; } }
+    switch(st){ case 'walk': case 'run': case 'pounce': case 'climb': case 'fall': return 'side'; case 'sleep': return 'lay'; case 'sit': return 'sit'; default: return 'front'; } }
   function setPose(key){ const cfg=CHARS[curChar]; if(!cfg||!cfg.poses) return;
     const im=poseImgs[curChar+'/'+key]; if(!im || curPose===key) return;
-    curPose=key; heightScale=POSE_H[key]||1; jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=false; applySize(); applyColor(); applyFacing(); ready=true; }
+    curPose=key; heightScale=curChar==='hero'?HERO_H:(POSE_H[key]||1); jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=false; applySize(); applyColor(); applyFacing(); ready=true; }
   // lightweight texture swap (same-size walk frames) — keeps the soft-body jiggle
   function swapTex(key){ const im=poseImgs[curChar+'/'+key]; if(!im||curPose===key) return; curPose=key; jelly.aspect=im.width/im.height; jelly.load(im); }
   // quick eye-blink: flick to the closed-eye variant of the current pose, then back
@@ -52,6 +63,9 @@
     blinking=true; swapTex(bk); setTimeout(()=>{ blinking=false; if(curPose===bk) swapTex(base); }, 140); }
   function loadChar(id){ const cfg=CHARS[id]||CHARS.blob;
     floatMode=!!cfg.float; directional=!!cfg.directional; vectorFace=cfg.vectorFace!==false; curChar=id; curPose=null;
+    WALK=cfg.walk||WALK; jelly.nearest=!!cfg.nearest; jellyScale=cfg.jelly?cfg.jelly.squish:1;
+    jelly.k=cfg.jelly?cfg.jelly.k:135; jelly.damp=cfg.jelly?cfg.jelly.damp:5.3; jelly.squish=jiggle()*jellyScale;
+    trail.style.display='none'; swayIdx=0; swayT=0;
     faceSvg.style.display = (vectorFace && pet.show) ? '' : 'none';
     if(cfg.poses){ const keys=Object.keys(cfg.poses); let n=0;           // multi-pose character (cat): preload all, show default
       keys.forEach(k=>{ const key=id+'/'+k; const done=()=>{ if(++n===keys.length) setPose(poseFor(pet.state)); };
@@ -88,15 +102,15 @@
   function phaseFx(){ glc.style.transition=faceSvg.style.transition='opacity .45s ease'; glc.style.opacity=faceSvg.style.opacity='0.12'; setTimeout(()=>{ glc.style.opacity=faceSvg.style.opacity='1'; },650); }
 
   // ---- streams from main ----
-  window.buddy.onState((s)=>{ settings=s.settings||settings; colorsMap=s.colors||colorsMap; if(settings){ jelly.squish=jiggle(); document.body.classList.toggle('rm',!!settings.reduceMotion); applySize(); }
+  window.buddy.onState((s)=>{ settings=s.settings||settings; colorsMap=s.colors||colorsMap; if(settings){ jelly.squish=jiggle()*jellyScale; document.body.classList.toggle('rm',!!settings.reduceMotion); applySize(); }
     if(s.active&&s.active!==curChar) loadChar(s.active); else applyColor(); });
-  window.buddy.getState().then((s)=>{ settings=s.settings; colorsMap=s.colors||colorsMap; if(settings){ jelly.squish=jiggle(); applySize(); } if(s.active&&s.active!==curChar) loadChar(s.active); else applyColor(); });
+  window.buddy.getState().then((s)=>{ settings=s.settings; colorsMap=s.colors||colorsMap; if(settings){ jelly.squish=jiggle()*jellyScale; applySize(); } if(s.active&&s.active!==curChar) loadChar(s.active); else applyColor(); });
 
   window.buddy.onPet((p)=>{
     const was=pet.show, prevFacing=pet.facing; pet=p;
     if(p.show){ if(p.size!==lastSize) applySize();
-      if(p.state!==lastState){ boostUntil=performance.now()+1200; onStateChange(p.state); if(CHARS[curChar]&&CHARS[curChar].poses) setPose(poseFor(p.state)); lastState=p.state; }
-      if(p.facing!==prevFacing) applyFacing();
+      if(p.state!==lastState){ boostUntil=performance.now()+1200; onStateChange(p.state); if(CHARS[curChar]&&CHARS[curChar].poses) setPose(poseFor(p.state)); lastState=p.state; applyFacing(); placeTrail(); }
+      if(p.facing!==prevFacing){ applyFacing(); placeTrail(); }
       if(vectorFace){ face.setWalking(p.state==='walk'); face.setBack(p.state==='climb'); }
       if(!was){ faceSvg.style.display = vectorFace ? '' : 'none'; applyFacing(); }
     } else if(was){ faceSvg.style.display='none'; clearInterval(zzzTimer); }
@@ -123,25 +137,63 @@
       case 'phase': phaseFx(); break;
       case 'look': face.glance(e.dir); break;
       case 'say': speak(e.kind||'idle'); break;
+      case 'resetInput': resetInput(); break;
+      case 'wiggle': jelly.squash(.3); setTimeout(()=>jelly.stretch(.3),170); setTimeout(()=>jelly.squash(.3),340); setTimeout(()=>jelly.stretch(.25),510); break;
+      case 'happy': jelly.squash(.4); hearts(); break;
+      case 'squash': jelly.squash(e.a||.4); break;
+      case 'launch': jelly.stretch(.6); dust(4,.5); break;
+      case 'pulse': jelly.stretch(.22); setTimeout(()=>jelly.squash(.18),120); break;
+      case 'dust': dust(10,1); break;
+      case 'sparkle': sparkles(e.n||8); break;
+      case 'popup': popup(e.text||'+1 INT!'); break;
     } });
+  // ---- arcade fx (Captain Cram) ----
+  function dust(n,k){ const cx=pet.x+pet.size/2, gy=pet.y+pet.size-2, u=Math.max(3,Math.round(pet.size*0.07));
+    for(let i=0;i<n;i++){ const el=document.createElement('div'); el.className='dust'; const sz=u*(1+Math.floor(Math.random()*2));
+      el.style.width=el.style.height=sz+'px'; el.style.left=(cx+(Math.random()-.5)*pet.size*.5)+'px'; el.style.top=(gy-sz)+'px';
+      const dir=i%2?1:-1; el.style.setProperty('--dx',(dir*(pet.size*.2+Math.random()*pet.size*.45*k))+'px'); el.style.setProperty('--dy',(-(Math.random()*pet.size*.3*k+4))+'px');
+      fx.appendChild(el); setTimeout(()=>el.remove(),700); } }
+  function sparkles(n){ const cx=pet.x+pet.size/2, cy=pet.y+pet.size-heightScale*pet.size*.5, u=Math.max(3,Math.round(pet.size*0.07)); const cols=['#ffffff','#ffe14d','#6be7ff','#ff7ab6'];
+    for(let i=0;i<n;i++){ const el=document.createElement('div'); el.className='sparkle'; const sz=u*(1+(i%2)); el.style.width=el.style.height=sz+'px';
+      el.style.background=cols[i%cols.length]; el.style.left=(cx-sz/2)+'px'; el.style.top=(cy-sz/2)+'px';
+      const a=Math.random()*6.283, r=pet.size*(.45+Math.random()*.5); el.style.setProperty('--dx',Math.cos(a)*r+'px'); el.style.setProperty('--dy',Math.sin(a)*r+'px');
+      el.style.animationDelay=(i*0.03)+'s'; fx.appendChild(el); setTimeout(()=>el.remove(),1000); } }
+  function popup(text){ const el=document.createElement('div'); el.className='pop'; el.textContent=text; el.style.fontSize=Math.max(12,Math.round(pet.size*.26))+'px';
+    el.style.left=(pet.x+pet.size/2)+'px'; el.style.top=(pet.y+pet.size-heightScale*pet.size-pet.size*.12)+'px'; fx.appendChild(el); setTimeout(()=>el.remove(),1800); }
+  // cape / speed trail behind the hero while flying (rebuilt only when the state or facing changes)
+  function placeTrail(){
+    const st=pet.state; if(curChar!=='hero' || !(st==='fly'||st==='dive') || !pet.show){ trail.style.display='none'; return; }
+    const S=pet.size, u=Math.max(2,Math.round(S*0.06)), cols=['#d62839','#ff5a6a','#ffd23f','#d62839'], f=pet.facing<0?-1:1;
+    trail.innerHTML=''; trail.style.display='block'; trail.style.width=trail.style.height='0px';
+    for(let i=0;i<4;i++){ const b=document.createElement('i'); b.style.background=cols[i]; const len=S*(0.55-0.08*i)+(i%2)*u*2, th=u;
+      if(st==='dive'){ b.style.width=th+'px'; b.style.height=len+'px'; b.style.left=(pet.x+S/2+(i-1.5)*th*1.6-th/2)+'px'; b.style.top=(pet.y+S-heightScale*S*0.5-S*0.2-len)+'px'; b.style.transformOrigin='50% 100%'; }
+      else { b.style.height=th+'px'; b.style.width=len+'px'; b.style.top=(pet.y+S-heightScale*S*0.5+(i-1.5)*th*1.7-th/2)+'px';
+        b.style.left=(f>0?pet.x+S*0.15-len:pet.x+S*0.85)+'px'; b.style.transformOrigin=(f>0?'100%':'0%')+' 50%'; }
+      b.style.setProperty('--ts',String(0.55+0.1*i)); b.style.animationDelay=(i*0.04)+'s'; trail.appendChild(b); } }
+  // drop any half-finished pointer drag (main asked, e.g. "Bring buddy back" or the watchdog)
+  function resetInput(){ try{ if(dragId!==null) glc.releasePointerCapture(dragId); }catch{} dragId=null; dragging=false; moved=false; stopPing(); chuteOn=false; chute.style.display='none'; }
 
   // ---- render loop ----
   let last=performance.now(), cleared=false, calmAcc=0;
-  function frame(now){ let dt=(now-last)/1000; last=now;
-    if(!ready){ requestAnimationFrame(frame); return; }
+  // The loop must never die: any exception inside a frame used to stop requestAnimationFrame
+  // for good (sprite frozen/invisible while its window still blocked clicks). Always re-arm.
+  let frameErrs=0;
+  function frame(now){ try{ frameBody(now); }catch(err){ if(frameErrs++%300===0) console.error('frame error:', err&&err.stack||err); } requestAnimationFrame(frame); }
+  function frameBody(now){ let dt=(now-last)/1000; last=now;
+    if(!ready){ return; }
     // hidden: clear once, then do nothing until the pet shows again (was a GPU clear every frame)
-    if(!pet.show){ if(!cleared){ jelly.clear(); cleared=true; } requestAnimationFrame(frame); return; }
+    if(!pet.show){ if(!cleared){ jelly.clear(); cleared=true; } return; }
     cleared=false;
     // GPU/CPU saver: while resting (sleeping / sitting / idle, nothing popping up) draw at
     // ~20fps instead of 60 — the breathing/blink motions are slow, so it looks the same.
     const calm=now>boostUntil && (pet.state==='sleep'||pet.state==='sit'||pet.state==='idle') && !foodOn && !chuteOn && !speechEl.classList.contains('show') && !blinking;
-    if(calm){ calmAcc+=dt; if(calmAcc<0.048){ requestAnimationFrame(frame); return; } dt=calmAcc; }
+    if(calm){ calmAcc+=dt; if(calmAcc<0.048){ return; } dt=calmAcc; }
     calmAcc=0; dt=Math.min(0.05,dt);
     if(['idle','sit'].includes(pet.state)){ idleAcc+=dt; if(idleAcc>2.4){ idleAcc=0; if(!(settings&&settings.reduceMotion)) jelly.squash(.08); } }
-    if(curChar==='cat'){
+    if(CHARS[curChar]&&CHARS[curChar].poses){
       // walk cycle locked to the distance actually travelled, so the paws plant
       // instead of sliding: one frame per ~17% of body size moved.
-      if(pet.state==='walk'){
+      if(pet.state==='walk'||pet.state==='run'){
         const v=Math.abs(pet.vx||0);
         walkDist += v>1 ? v*dt : pet.size*dt*1.1;            // fallback cadence if speed unknown
         const step=pet.size*0.17;
@@ -151,7 +203,9 @@
       if(['idle','sit'].includes(pet.state) && !(settings&&settings.reduceMotion)){ breatheT+=dt;
         if(breatheT>2.1){ breatheT=0; jelly.squash(Math.random()<0.25?0.07:0.035); } }
       // blink now and then while facing us / sitting (not mid-walk)
-      if(!blinking && pet.state!=='sleep' && (curPose==='front'||curPose==='sit')){ blinkT+=dt;
+      // hero: gentle cape sway while standing (two idle frames)
+      if(curChar==='hero' && !blinking && (curPose==='idle'||curPose==='idle2') && pet.state!=='sleep'){ swayT+=dt; if(swayT>0.55){ swayT=0; swayIdx^=1; swapTex(swayIdx?'idle2':'idle'); } }
+      if(!blinking && pet.state!=='sleep' && poseImgs[curChar+'/'+curPose+'_blink']){ blinkT+=dt;
         if(blinkT>blinkWait){ blinkT=0; blinkWait=2.4+Math.random()*3.6; doBlink(); if(Math.random()<0.3) setTimeout(doBlink,230); } }
     }
     if(vectorFace){ face.idle(dt); face.step(dt); } jelly.step(dt);
@@ -167,7 +221,6 @@
       food.style.opacity=String(p>0.82?Math.max(0,1-(p-0.82)/0.18):1);
       if(p>=1){ foodOn=false; food.style.display='none'; food.style.opacity='1'; jelly.squash(.5); transient('love',900); face.talk(.7);
         const c=petScreenCss(); spawn('✨','heart',c.x,c.y+pet.size*0.2); speak('fed'); } }
-    requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
@@ -177,13 +230,20 @@
   window.addEventListener('pointerdown',(e)=>{ if(e.button===2) return; if(!overPet(e.clientX,e.clientY)) return;
     dragId=e.pointerId; moved=false; downAt=Date.now(); lastPt={x:e.clientX,y:e.clientY};
     try{glc.setPointerCapture(e.pointerId);}catch{} e.preventDefault(); });
+  // heartbeat to main while a drag is live: if it stops (lost pointerup, reload) the watchdog releases the sprite
+  let pingT=0; function startPing(){ stopPing(); pingT=setInterval(()=>{ try{ window.buddy.petDragPing(); }catch{} },400); } function stopPing(){ clearInterval(pingT); pingT=0; }
   window.addEventListener('pointermove',(e)=>{ if(dragId!==e.pointerId) return;
-    if(!moved&&Math.hypot(e.clientX-lastPt.x,e.clientY-lastPt.y)>5){ moved=true; dragging=true; window.buddy.petGrab(); }
+    // button already up but we never saw pointerup (released outside the window / over another app): finish the drag now
+    if(e.buttons===0 && e.pointerType==='mouse'){ endDrag(e); return; }
+    if(!moved&&Math.hypot(e.clientX-lastPt.x,e.clientY-lastPt.y)>5){ moved=true; dragging=true; window.buddy.petGrab(); startPing(); }
     if(dragging) window.buddy.petDrag(e.clientX,e.clientY); lastPt={x:e.clientX,y:e.clientY}; });
   function endDrag(e){ if(dragId!==e.pointerId) return; try{glc.releasePointerCapture(e.pointerId);}catch{}
-    if(dragging){ dragging=false; window.buddy.petRelease(); } else if(Date.now()-downAt<300){ window.buddy.petTap(); } dragId=null; }
-  window.addEventListener('pointerup',endDrag); window.addEventListener('pointercancel',endDrag);
+    if(dragging){ dragging=false; stopPing(); window.buddy.petRelease(); } else if(Date.now()-downAt<300){ window.buddy.petTap(); } dragId=null; moved=false; }
+  window.addEventListener('pointerup',endDrag); window.addEventListener('pointercancel',endDrag); glc.addEventListener('lostpointercapture',endDrag);
   // safety: if the pointer is ever lost mid-drag (passthrough flips, focus loss), release
-  window.addEventListener('blur',()=>{ if(dragId!==null){ if(dragging){ dragging=false; window.buddy.petRelease(); } dragId=null; moved=false; } });
+  window.addEventListener('blur',()=>{ if(dragId!==null){ if(dragging){ dragging=false; stopPing(); window.buddy.petRelease(); } dragId=null; moved=false; } });
+  // WebGL context lost (GPU reset, driver update, out of memory): the sprite would vanish while its window kept blocking clicks. Reload to rebuild.
+  glc.addEventListener('webglcontextlost',(e)=>{ e.preventDefault(); ready=false; setTimeout(()=>location.reload(),1500); });
+  glc.addEventListener('webglcontextrestored',()=>location.reload());
   window.addEventListener('dblclick',(e)=>{ if(overPet(e.clientX,e.clientY)) window.buddy.openSettings(); });
 })();

@@ -4,7 +4,7 @@
 (function () {
   const $ = (s) => document.querySelector(s);
   const EMOJI = { blob:'🫧', ghost:'👻', cat:'🐱', chirp:'🐤', quack:'🦆', finn:'🐬', axo:'🦎',
-                  jelly:'🎐', fox:'🦊', octo:'🐙', cog:'⚙️', ember:'🐲', zrk:'👽' };
+                  jelly:'🎐', fox:'🦊', octo:'🐙', cog:'⚙️', ember:'🐲', zrk:'👽', hero:'🦸' };
   const feedCost = (lvl) => 50 * (lvl + 1);
   // colour presets = hue-rotate degrees applied to the sprite; swatch previews the real tint
   const PALETTE = [0, 45, 90, 140, 190, 250, 300];
@@ -97,16 +97,19 @@
     for (const c of order) {
       const owned = state.owned.includes(c.id);
       const active = state.active === c.id;
+      const tierLocked = !owned && (state.lockedIds || []).includes(c.id);
       const card = document.createElement('div');
       card.className = 'card' + (active ? ' active-c' : '') + (owned ? '' : ' locked');
       const badge = active ? '<span class="badge on">Active</span>'
                    : owned ? '<span class="badge on">Owned</span>'
                    : !c.implemented ? '<span class="badge">Soon</span>'
+                   : tierLocked ? '<span class="badge">Locked</span>'
                    : '<span class="badge">In the machine</span>';
       let foot;
       if (owned && active)      foot = `<button class="act ghost" disabled>In use</button>`;
       else if (owned)           foot = `<button class="act" data-use="${c.id}">Set active</button>`;
       else if (!c.implemented)  foot = `<button class="act ghost" disabled>Coming soon</button>`;
+      else if (tierLocked)      foot = `<button class="act ghost" disabled>🔒 Adopt every Tier ${(c.tier || 2) - 1} buddy first</button>`;
       else                      foot = `<button class="act ghost" disabled>🎰 Crank to adopt</button>`;
       const rar = (state.rarities && state.rarities[c.rarity]) || { label: c.rarity, color: '#9aa4b2' };
       const moveLabel = { walk:'walks', float:'floats', fly:'flies', swim:'swims' }[c.move] || c.move;
@@ -119,7 +122,7 @@
           <span class="chip" style="color:${rar.color};background:${rar.color}22">${rar.label}</span>
           <span class="chip">${moveLabel}</span>
         </div>
-        <p class="blurb">${owned ? c.blurb : (mystery ? 'A mystery friend waiting in the gumball machine.' : c.blurb)}</p>
+        <p class="blurb">${owned ? c.blurb : (tierLocked ? 'A rare Tier ' + (c.tier || 2) + ' friend. Adopt every Tier ' + ((c.tier || 2) - 1) + ' buddy and it joins the gumball machine.' : mystery ? 'A mystery friend waiting in the gumball machine.' : c.blurb)}</p>
         <div class="foot">${foot}</div>`;
       grid.appendChild(card);
     }
@@ -188,6 +191,7 @@
       ${rowRange('Speed', 'How fast it moves around.', 'speed', 0.4, 2, 0.1, s.speed, '×')}
       ${rowSelect('Size', 'How big it appears on screen.', 'size', sizeOpts(s.size), s.size)}
       ${rowToggle('Stay in one spot', 'Naughty corner: stops roaming — just idle animations, little hops and reactions where it stands.', 'stayPut', s.stayPut)}
+      ${rowToggle('Special antics', 'Now and then: Pib chases a butterfly, Captain Cram does a stunt. Only while resting, never in fullscreen.', 'antics', s.antics !== false)}
       ${rowToggle('Speech bubbles', 'Let it say things now and then.', 'speech', s.speech)}
       ${rowRange('Chattiness', 'How often it speaks up (floaty pets talk less).', 'chatter', 0, 1, 0.1, (s.chatter==null?0.6:s.chatter), '')}
       ${rowToggle('Reduce motion', 'Calmer, minimal animation.', 'reduceMotion', s.reduceMotion)}

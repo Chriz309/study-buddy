@@ -22,6 +22,18 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 .heart { position: absolute; font-size: 22px; pointer-events: none; animation: rise 1s ease-out forwards; }
 @keyframes rise { 0% { opacity: 1; transform: translateY(0) scale(.6);} 100% { opacity: 0; transform: translateY(-48px) scale(1.2);} }
 .zzz { position: absolute; font-size: 18px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.4); pointer-events: none; animation: zfloat 1.9s ease-out forwards; font-weight: 800; }
+/* arcade fx for Captain Cram: dust puff, sparkle, +1 INT! pop-up, cape/speed trail */
+.dust { position: absolute; background: #cbb89a; pointer-events: none; image-rendering: pixelated; animation: dust .6s ease-out forwards; }
+@keyframes dust { 0% { opacity: .95; transform: translate(0,0) scale(1);} 100% { opacity: 0; transform: translate(var(--dx),var(--dy)) scale(.4);} }
+.sparkle { position: absolute; pointer-events: none; image-rendering: pixelated; animation: sparkle .75s steps(6) forwards;
+           background: #fff; box-shadow: 0 0 0 1px #ffd23f; }
+@keyframes sparkle { 0% { opacity: 1; transform: translate(0,0) scale(1) rotate(45deg);} 100% { opacity: 0; transform: translate(var(--dx),var(--dy)) scale(.2) rotate(45deg);} }
+.pop { position: absolute; pointer-events: none; transform: translateX(-50%); white-space: nowrap; font-family: "Courier New", monospace; font-weight: 900; color: #ffe14d;
+       text-shadow: -1px -1px 0 #7a1f00, 1px -1px 0 #7a1f00, -1px 1px 0 #7a1f00, 1px 1px 0 #7a1f00, 0 2px 0 #7a1f00; animation: pop 1.7s steps(14) forwards; }
+@keyframes pop { 0% { opacity: 0; margin-top: 0;} 12% { opacity: 1;} 80% { opacity: 1;} 100% { opacity: 0; margin-top: -34px;} }
+#trail { position: absolute; left: 0; top: 0; z-index: 9; display: none; pointer-events: none; }
+#trail i { position: absolute; display: block; image-rendering: pixelated; animation: tflick .16s steps(2) infinite alternate; }
+@keyframes tflick { from { transform: scale(1); opacity: 1;} to { transform: scale(var(--ts,.7)); opacity: .75;} }
 @keyframes zfloat { 0% { opacity: 0; transform: translate(0,0) scale(.6);} 20% { opacity: 1;} 100% { opacity: 0; transform: translate(16px,-42px) scale(1.1);} }
   </style>
 </head>
@@ -30,11 +42,13 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
   <svg id="face"></svg>
   <img id="chute" />
   <img id="food" />
+  <div id="trail"></div>
   <div id="fx"></div>
   <div id="speech"></div>
   <script src="art.js"></script>
   <script src="art-ghost.js"></script>
   <script src="art-cat.js"></script>
+  <script src="art-hero.js"></script>
   <script src="parachute.js"></script>
   <script src="food.js"></script>
   <script src="jelly.js"></script>

@@ -115,6 +115,7 @@ test('abortReason: every rule of the safety spec', () => {
   assert.equal(L.abortReason({ ...AB, layout: 'b' }), 'display-changed');
   assert.equal(L.abortReason({ ...AB, fullscreen: true }), 'fullscreen');
   assert.equal(L.abortReason({ ...AB, probeLost: true }), 'probe-lost');
+  assert.equal(L.abortReason({ ...AB, pw: true }), 'password-field');
   assert.equal(L.abortReason({ ...AB, fg: { h: 6, r: AB.fg.r } }), 'foreground-changed');
   assert.equal(L.abortReason({ ...AB, fg: { h: 5, r: L.R(30, 0, 800, 600) } }), 'foreground-changed', 'window moved');
   assert.equal(L.abortReason({ ...AB, fg: { h: 5, r: L.R(1, 1, 800, 600) } }), null, '1px jitter is fine');
@@ -148,4 +149,14 @@ test('compareRegions: identical = 0, a changed pixel block shows up', () => {
   for (let y = 10; y < 20; y++) for (let x = 10; x < 20; x++) b.data[(y * w + x) * 4] = 250;
   const c = L.compareRegions(a, b, [L.R(0, 0, 100, 100)], D1); assert.ok(c.mean > 0 && c.pct === 1 && c.max === 130);
   assert.equal(L.compareRegions(a, { ...b, w: 5 }, [L.R(0, 0, 1, 1)], D1).mean, 1);
+});
+
+test('overlayBox: only the prank area, never a whole display (a full-screen window makes Windows enable Do Not Disturb and shift the tray)', () => {
+  const b = { x: 0, y: 0, width: 1920, height: 1080 };
+  const small = L.overlayBox(L.R(1000, 960, 300, 120), b); assert.ok(small.w < 1000 && small.h < 500);
+  assert.ok(L.within(L.R(1000, 960, 300, 120), small), 'contains the area');
+  for (const area of [L.R(0, 0, 1920, 1080), L.R(-50, -50, 3000, 3000), L.R(10, 10, 1900, 1060)]) {
+    const box = L.overlayBox(area, b); assert.ok(box.w <= 1920 - 16 && box.h <= 1080 - 16, 'at least 16 px short in both directions'); assert.ok(L.within(box, L.R(0, 0, 1920, 1080)));
+  }
+  const second = { x: 1920, y: 0, width: 2560, height: 1440 }; const sb = L.overlayBox(L.R(1920, 0, 2560, 1440), second); assert.ok(sb.w < 2560 && sb.x >= 1920 && sb.x + sb.w <= 4480);
 });

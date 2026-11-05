@@ -138,6 +138,7 @@ function abortReason(c) {
   if (c.layout0 !== c.layout) return 'display-changed';
   if (c.fullscreen) return 'fullscreen';
   if (c.probeLost) return 'probe-lost';
+  if (c.pw) return 'password-field';
   if (c.fg0 && c.fg && (c.fg0.h !== c.fg.h || !sameRect(c.fg0.r, c.fg.r, 2))) return 'foreground-changed';
   if (c.textMode && !sameSig(c.caret0, c.caret)) return 'caret-changed';
   if (c.cursor) {
@@ -170,7 +171,16 @@ function candidates(gags, model, env, recent, R_ = Math.random, only) {
   return out.sort((a, b) => a.key - b.key);
 }
 
-module.exports = { R, fromArr, right, bottom, center, inflate, intersects, containsPt, union, distToRect, sameRect, within, physToDip, cropFor, displayAt, layoutKey,
+// The overlay must never look like a fullscreen app (Windows then turns on Do Not Disturb and shifts the tray): it only covers the box the prank needs,
+// and is always at least 16 px smaller than the display in both directions.
+function overlayBox(area, bounds, margin = 160) {
+  const x0 = Math.max(bounds.x, Math.floor(area.x - margin)), y0 = Math.max(bounds.y, Math.floor(area.y - margin));
+  const x1 = Math.min(bounds.x + bounds.width, Math.ceil(area.x + area.w + margin)), y1 = Math.min(bounds.y + bounds.height, Math.ceil(area.y + area.h + margin));
+  const w = Math.min(x1 - x0, bounds.width - 16), h = Math.min(y1 - y0, bounds.height - 16);
+  return R(Math.min(x0, bounds.x + bounds.width - w), Math.min(y0, bounds.y + bounds.height - h), w, h);
+}
+
+module.exports = { overlayBox, R, fromArr, right, bottom, center, inflate, intersects, containsPt, union, distToRect, sameRect, within, physToDip, cropFor, displayAt, layoutKey,
   ALLOWED_APPS, appAllowed, buildModel, desktopRows, groupLines, FREQ, nextDelay, createActivity, blockedReason, CAP_MS, abortReason, sameSig, candidates };
 
 // Dev restore check: compares the same screen areas before and after a prank (bitmaps of a whole display, physical pixels).

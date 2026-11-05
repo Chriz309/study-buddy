@@ -42,7 +42,7 @@ function createHost({ BrowserWindow, desktopCapturer, screen, getPetWin }) {
   }
   function openOverlay(display, scene, onReady, onError) {
     close();
-    const b = display.bounds;
+    const b = { x: scene.ox, y: scene.oy, width: scene.w, height: scene.h };   // the prank's own box, never the whole display
     win = new BrowserWindow({
       x: b.x, y: b.y, width: b.width, height: b.height, transparent: true, frame: false, resizable: false, movable: false, skipTaskbar: true, focusable: false,
       hasShadow: false, show: false, fullscreenable: false, minimizable: false, maximizable: false, closable: true,

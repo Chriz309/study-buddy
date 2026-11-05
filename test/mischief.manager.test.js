@@ -17,7 +17,7 @@ const SCAN = (ps) => ({
 });
 
 function rig(over = {}) {
-  const E = freshEngine(), cls = { wentAt: 0, closed: 0, opened: 0, probeStarted: 0, probeStopped: 0, scenes: [], fx: [], emitted: [] };
+  const E = freshEngine(), cls = { order: [], wentAt: 0, closed: 0, opened: 0, probeStarted: 0, probeStopped: 0, scenes: [], fx: [], emitted: [] };
   E.init({ event: () => {}, toy: () => {}, state: () => {} }, 1000); E.setWorld([{ id: 1, bounds: D1.bounds, workArea: D1.workArea }]); E.setSize(60); E.settings = { speed: 1, personality: 'chill', mischief: 25 };
   E.moveType = 'walk'; E.gait = 'step'; E.pos = { x: 700, y: 1032 - 60 }; E.vel = { x: 0, y: 0 }; E.onFloor = true; E.setState('idle', 0); E.nextDecision = 1e15; E.tick(Date.now()); E.lastChange = Date.now(); E.onFloor = true; E.setState('idle', 0); E.lastChange = Date.now();   // hold the random brain quiet (it would otherwise decide() because the fake clock is far from Date.now())
   const ps = { fgH: 99, fgR: [300, 200, 900, 600], c: null, s: null, v: null, probeDead: false, pw: false }, st = { cursor: { x: 1500, y: 300 }, flags: { userHidden: false, petShown: true, paused: false, stayPut: false, reduceMotion: false, locked: false, suspended: false, fullscreen: false }, displays: [D1], enabled: true };
@@ -25,15 +25,15 @@ function rig(over = {}) {
   const probe = {
     start() { cls.probeStarted++; return true; }, stop() { cls.probeStopped++; }, isAlive: () => true,
     async request(cmd) {
-      await wait(2); if (ps.probeDead) return null;
-      if (cmd === 'scan') return SCAN(ps);
+      await wait(ps.delay || 2); if (ps.probeDead) return null;
+      if (cmd === 'scan') { cls.scans = (cls.scans || 0) + 1; cls.order.push('scan'); const sc = SCAN(ps); if (ps.shiftFromScan && cls.scans >= ps.shiftFromScan) for (const it of sc.items) if (it.k === 'tray') it.r = [it.r[0] - 28, ...it.r.slice(1)]; return Object.assign(sc, { pw: ps.pwFromScan && cls.scans >= ps.pwFromScan ? 1 : 0 }); }
       if (cmd === 'text') return { pw: ps.pw, l: [0, 1, 2, 3, 4, 5].map(i => [330, 250 + i * 26, 520, 20]) };
       return { fg: { h: ps.fgH, p: 'notepad', c: 'Notepad', z: 0, i: 0, r: ps.fgR }, c: ps.c, s: ps.s, v: [330, 250, 520, 20] };
     },
   };
   const host = {
     displays: () => st.displays, toDip: (r) => r, count: () => (cls.opened - cls.closed > 0 ? 1 : 0), show() {}, go() { cls.wentAt = Date.now(); },
-    async capture(display, crops) { const o = {}; for (const k of Object.keys(crops)) o[k] = { rect: crops[k], png: 'data:,', padL: 8, padT: 8, padR: 8, padB: 8 }; return o; },
+    async capture(display, crops) { cls.order.push('capture'); const o = {}; for (const k of Object.keys(crops)) o[k] = { rect: crops[k], png: 'data:,', padL: 8, padT: 8, padR: 8, padB: 8 }; return o; },
     openOverlay(display, scene, ready) { cls.opened++; cls.scenes.push(scene); setTimeout(ready, 3); }, close() { if (cls.opened > cls.closed) cls.closed++; },
   };
   if (over.spy) over.spy(host, cls);
@@ -117,7 +117,7 @@ test('skips silently: not Windows, disabled, cursor already near, password field
 });
 
 test('the screenshot crop is taken BEFORE any overlay exists, and the overlay is closed + probe stopped at the end', async () => {
-  const order = []; const r = rig({ spy: (h) => { const c = h.capture, o = h.openOverlay, cl = h.close; h.capture = async (...a) => { order.push('capture'); return c(...a); }; h.openOverlay = (...a) => { order.push('overlay'); return o(...a); }; h.close = () => { order.push('close'); return cl(); }; } });
+  const order = []; let r0 = null; const r = r0 = rig({ spy: (h) => { const c = h.capture, o = h.openOverlay, cl = h.close; h.capture = async (...a) => { order.push('capture'); return c(...a); }; h.openOverlay = (...a) => { order.push('overlay'); return o(...a); }; h.close = () => { order.push('close'); return cl(); }; } });
   try {
     const run = r.m.start({ only: 'shock', force: true }); await r.untilGo(); r.m.stop(); await run;
     assert.deepEqual(order.slice(0, 2), ['capture', 'overlay']); assert.equal(order[order.length - 1], 'close');
@@ -130,4 +130,44 @@ test('only one prank at a time, and nothing is scheduled while disabled', async 
     const run = r.m.start({ only: 'shock', force: true }); await r.wait(5); assert.equal((await r.m.start({ only: 'tug', force: true })).reason, 'running');
     await r.untilGo(); r.m.stop(); await run; r.st.enabled = false; r.m.schedule(); assert.equal(r.m.isRunning(), false);
   } finally { r.done(); }
+});
+
+test('prep can be stopped: stop(), lock, suspend, fullscreen, grab, disabled or a moved sprite during the 3-5 s preparation never open an overlay', async () => {
+  const cases = [['stopped', (r) => r.m.stop()], ['session-locked', (r) => { r.st.flags.locked = true; }], ['suspended', (r) => { r.st.flags.suspended = true; }], ['fullscreen', (r) => { r.st.flags.fullscreen = true; }],
+    ['sprite-grabbed', (r) => { r.E.dragging = true; }], ['sprite-moved', (r) => { r.E.pos.x += 80; }], ['quit', (r) => r.m.stop('quit')]];
+  for (const [why, act] of cases) {
+    const r = rig(); r.ps.delay = 60; try {
+      const run = r.m.start({ only: 'tug', force: true }); await r.wait(90); act(r); const res = await run;
+      assert.equal(res.status, 'skipped', why); assert.equal(res.reason, why === 'quit' ? 'quit' : why, why); assert.equal(r.cls.opened, 0, why + ': no overlay'); assert.ok(!r.cls.order.includes('capture') || why === 'x', why + ': checked before the capture');
+    } finally { r.done(); }
+  }
+  const r = rig(); r.ps.delay = 60; r.st.enabled = true; try { const run = r.m.start({ only: 'tug' }); await r.wait(90); r.st.enabled = false; const res = await run; assert.equal(res.reason, 'disabled'); assert.equal(r.cls.opened, 0); } finally { r.done(); }
+});
+
+test('privacy order: the desktop is looked at again right BEFORE the capture; a focused password field means no crop is ever taken', async () => {
+  let r = rig(); try {
+    const run = r.m.start({ only: 'shock', force: true }); await r.untilGo(); r.m.stop(); await run;
+    const o = r.cls.order; assert.deepEqual(o.slice(0, 4), ['scan', 'scan', 'capture', 'scan'], 'scan, re-scan, capture, re-scan, then the overlay');
+  } finally { r.done(); }
+  r = rig(); r.ps.pwFromScan = 2; try {
+    const res = await r.m.start({ only: 'shock', force: true });
+    assert.deepEqual([res.status, res.reason], ['skipped', 'password-field']); assert.ok(!r.cls.order.includes('capture'), 'no screenshot of a password field'); assert.equal(r.cls.opened, 0);
+  } finally { r.done(); }
+  r = rig(); r.ps.pwFromScan = 3; try {
+    const res = await r.m.start({ only: 'shock', force: true });
+    assert.deepEqual([res.status, res.reason], ['skipped', 'password-field'], 'the after-capture check is kept'); assert.equal(r.cls.opened, 0);
+  } finally { r.done(); }
+  r = rig(); try {   // another app became foreground between the first scan and the re-scan
+    const orig = r.m; r.ps.fgH = 99; const run = r.m.start({ only: 'shock', force: true }); await r.wait(4); r.ps.fgH = 5; const res = await run;
+    assert.equal(res.status, 'skipped'); assert.ok(['foreground-changed'].includes(res.reason), res.reason); assert.ok(!r.cls.order.includes('capture') || res.reason === 'foreground-changed');
+  } finally { r.done(); }
+});
+
+test('a target that moved between locating and opening the overlay (the tray shifted 28 px) is skipped', async () => {
+  for (const n of [2, 3]) {
+    const r = rig(); r.ps.shiftFromScan = n; try {
+      const res = await r.m.start({ only: 'clock', force: true });
+      assert.deepEqual([res.status, res.reason], ['skipped', 'target-moved'], 'scan #' + n); assert.equal(r.cls.opened, 0, 'no overlay'); assert.equal(r.cls.order.includes('capture'), n === 3, 'a re-scan before the capture stops it early');
+    } finally { r.done(); }
+  }
 });

@@ -14,7 +14,7 @@ const devrun = require('./devrun');
 const mlogic = require('./mischief/logic');       // desktop mischief (Windows overlay illusions): see src/main/mischief/
 const { createManager } = require('./mischief/manager');
 const { createHost } = require('./mischief/host');
-const { createProbe } = require('./mischief/probe');
+const { createProbe, killAll: killProbes } = require('./mischief/probe');
 const MGAGS = require('../mischief/gags');
 
 // --- dev mode (STUDYBUDDY_DEV=1): tray test items, a scripted command run and a log file. Off in
@@ -675,6 +675,7 @@ function startAntic(name) {
 // --- desktop mischief ----------------------------------------------------------------------------
 // Opt-in (default OFF in public builds, ON in dev builds). Overlay illusions only: see src/main/mischief/manager.js.
 const mischiefActivity = mlogic.createActivity();
+let devDuring = null;
 let mischief = null, mischiefHost = null, mischiefChaos = false, mfFlags = { locked: false, suspended: false }, devCursor = null, devAbortAt = 0;
 function mischiefEnabled() { if (process.platform !== 'win32') return false; const v = store.get().settings.deskMischief; return v == null ? DEV : !!v; }
 function petEventOut(type, data) { if (petWin && !petWin.isDestroyed()) petWin.webContents.send('petEvent', Object.assign({ type }, data || {})); }
@@ -689,6 +690,7 @@ function initMischief() {
     emit: petEventOut, setFx: (fx) => { engine.mischief = fx; }, sleep: (ms) => new Promise(r => setTimeout(r, ms)),
     spriteBox: () => mlogic.R(engine.pos.x, engine.pos.y - engine.size * 0.3, engine.size, engine.size * 1.3),
     hidePet: (on) => { try { if (petWin && !petWin.isDestroyed()) petWin.setOpacity(on ? 0 : (petWin._shown ? 1 : 0)); } catch {} },
+    onGo: () => { if (devDuring) devDuring(); },
     onResult: (r) => { if (r.status === 'aborted' && devAbortAt) { devLog('ABORT-LATENCY', r.id, r.reason, (Date.now() - devAbortAt) + 'ms'); devAbortAt = 0; } },
   });
   ipcMain.on('mischief:ready', () => mischiefHost._ready());
@@ -715,11 +717,17 @@ async function devVerify(id) {
   if (!DEV || !mischief) return;
   const wins0 = BrowserWindow.getAllWindows().length, disp = mischiefHost.displays()[0], whole = mlogic.R(disp.bounds.x, disp.bounds.y, disp.bounds.width, disp.bounds.height);
   const grab = async () => { mischief.hidePetForVerify(true); await new Promise(r => setTimeout(r, 120)); const p = await mischiefHost.pixels(disp, whole); mischief.hidePetForVerify(false); return p; };
+  // system state must not change either: notification state (2 = a fullscreen app is running, which turns on Do Not Disturb) and the tray layout
+  const sp = createProbe(); sp.start();
+  const sample = async () => { const s = await sp.request('scan', 5000); return s && { ns: s.ns, tray: (s.items || []).filter(i => i.k === 'tray').map(i => i.r.join(',')).join('|') }; };
+  const sBefore = await sample(); let sDuring = null; devDuring = () => { setTimeout(async () => { sDuring = await sample(); }, 1800); };
   const before = await grab(); const res = await devPrank(id);
   await new Promise(r => setTimeout(r, 2200));   // sprite falls back to the floor
+  const sAfter = await sample(); sp.stop(); devDuring = null;
   const after = await grab(), rects = (res && res.rects) || [];
   const cmp = mlogic.compareRegions(before, after, rects.length ? rects : [whole], disp);
-  devLog('VERIFY', id, JSON.stringify({ dims: [before && before.w, before && before.h, after && after.w, after && after.h, before && before.data && before.data.length], result: res && res.status, reason: res && res.reason, meanDiff: +cmp.mean.toFixed(5), pctChanged: +cmp.pct.toFixed(3), maxChannel: cmp.max, overlaysBefore: wins0, overlaysAfter: BrowserWindow.getAllWindows().length }));
+  const sysOk = !!(sBefore && sDuring && sAfter && sBefore.ns === sDuring.ns && sBefore.ns === sAfter.ns && sBefore.tray === sDuring.tray && sBefore.tray === sAfter.tray);
+  devLog('VERIFY', id, JSON.stringify({ ok: res && res.status === 'played' ? (cmp.mean < 0.001 && sysOk) : null, dims: [before && before.w, before && before.h, after && after.w, after && after.h, before && before.data && before.data.length], result: res && res.status, reason: res && res.reason, meanDiff: +cmp.mean.toFixed(5), pctChanged: +cmp.pct.toFixed(3), maxChannel: cmp.max, system: { nsBefore: sBefore && sBefore.ns, nsDuring: sDuring && sDuring.ns, nsAfter: sAfter && sAfter.ns, trayStable: !!(sBefore && sDuring && sAfter && sBefore.tray === sDuring.tray && sBefore.tray === sAfter.tray), trayBefore: sBefore && sBefore.tray, trayDuring: sDuring && sDuring.tray }, overlaysBefore: wins0, overlaysAfter: BrowserWindow.getAllWindows().length }));
 }
 
 // --- dev helpers (STUDYBUDDY_DEV=1 only) -------------------------------------------------------
@@ -828,4 +836,4 @@ app.on('ready', () => {
 });
 app.on('window-all-closed', () => { /* keep running in tray */ });
 app.on('activate', () => openSettings());   // macOS: clicking the Dock icon opens Shop & Settings
-app.on('before-quit', () => { app.isQuiting = true; clearTimeout(anticTimer); try { if (mischief) mischief.stop('quit'); if (mischiefHost) mischiefHost.close(); } catch {} try { toy.destroy(); } catch {} try { fgProbe.stop(); } catch {} store.saveNow(); });
+app.on('before-quit', () => { app.isQuiting = true; clearTimeout(anticTimer); try { if (mischief) mischief.stop('quit'); if (mischiefHost) mischiefHost.close(); killProbes(); } catch {} try { toy.destroy(); } catch {} try { fgProbe.stop(); } catch {} store.saveNow(); });

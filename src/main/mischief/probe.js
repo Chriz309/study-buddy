@@ -2,6 +2,9 @@
 // UI Automation probe for ONE prank: a PowerShell that lives from "a prank is about to start" until it ends, then its stdin is closed.
 // There is no always-on probe: nothing here runs between pranks. Windows only.
 const { spawn } = require('child_process');
+const path = require('path');
+const active = new Set();   // every child we started: killed synchronously on quit
+const POWERSHELL = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');   // absolute path: never a PATH lookup
 const { SCRIPT } = require('./probe-script');
 
 function createProbe(opts = {}) {
@@ -11,7 +14,8 @@ function createProbe(opts = {}) {
   const failAll = () => { for (const id of [...pending.keys()]) settle(id, null); };
   function start() {
     if (process.platform !== 'win32') return false;
-    try { proc = spawn(opts.command || 'powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', SCRIPT], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }); } catch { return false; }
+    try { proc = spawn(opts.command || POWERSHELL, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', SCRIPT], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }); } catch { return false; }
+    active.add(proc); const me = proc; me.on('exit', () => active.delete(me));
     proc.stdout.setEncoding('utf8');
     proc.stdout.on('data', (d) => {
       buf += d; let i;
@@ -41,4 +45,5 @@ function createProbe(opts = {}) {
   }
   return { start, request, stop, isAlive: () => !!proc && !dead };
 }
-module.exports = { createProbe };
+const killAll = () => { for (const p of [...active]) { try { p.kill(); } catch {} } active.clear(); };
+module.exports = { createProbe, killAll };

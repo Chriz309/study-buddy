@@ -11,7 +11,7 @@ const PROBE_MS = 110;          // how often the probe is asked for foreground / 
 const PAD = 8;                 // physical px of surroundings captured around each target (used to build the patch)
 
 function createManager(d) {
-  let running = false, timer = null, chaos = false, recent = [], cur = null;
+  let running = false, timer = null, chaos = false, recent = [], cur = null, prepAbort = null, forced = false;
 
   const settings = () => d.settings();
   const enabled = () => d.platform === 'win32' && !!settings().enabled;
@@ -39,6 +39,29 @@ function createManager(d) {
   }
   const setChaos = (on) => { chaos = !!on; schedule(); };
 
+  const hold = () => { if (d.holdBrain) d.holdBrain(6000); };   // re-armed at every step of the preparation: the random brain must not walk the sprite off
+  // checked right before the capture and again right before the overlay opens: stop(), settings, lock, suspend, fullscreen, grab, a sprite that moved
+  function gate(env) {
+    const f = d.flags(), e = d.engine; hold();
+    if (prepAbort) return prepAbort;
+    if (!forced && !settings().enabled) return 'disabled';
+    if (f.locked) return 'session-locked'; if (f.suspended) return 'suspended'; if (f.fullscreen) return 'fullscreen'; if (f.userHidden || !f.petShown) return 'hidden';
+    if (e.dragging) return 'sprite-grabbed';
+    if (!e.canStartScript(true)) return 'sprite-busy';
+    if (Math.abs(e.pos.x - env.sx) > 6 || Math.abs(e.pos.y - env.sy) > 6) return 'sprite-moved';
+    return null;
+  }
+  const rectsOf = (m) => [...m.buttons, m.start, m.wifi, m.volume, m.battery, m.clock, ...m.desktop].filter(Boolean);
+  // a fresh look at the desktop: same foreground window, no password field focused, and every target rect still exactly where we found it
+  async function lookAgain(probe, scan, model, plan, displays) {
+    const s = await probe.request('scan', 3000); if (!s) return 'probe-lost';
+    if (s.pw) return 'password-field';
+    const f0 = scan.fg, f1 = s.fg;
+    if (!f1 || (f0 && (f0.h !== f1.h || !logic.sameRect(logic.fromArr(f0.r), logic.fromArr(f1.r), 2)))) return 'foreground-changed';
+    const m2 = logic.buildModel(s, d.host.toDip, displays), was = rectsOf(model), now = rectsOf(m2);
+    for (const r of Object.values(plan.tg)) if (was.some(q => logic.sameRect(q, r, 1)) && !now.some(q => logic.sameRect(q, r, 4))) return 'target-moved';
+    return null;
+  }
   // ---------------------------------------------------------------- one prank
   // opts.only = a gag id (dev), opts.force = skip the idle/busy gates (dev)
   async function start(opts = {}) {
@@ -46,7 +69,7 @@ function createManager(d) {
     if (d.platform !== 'win32') return { status: 'skipped', reason: 'not-windows' };
     if (!opts.force) { const why = blocked(); if (why) { d.log('mischief skipped: ' + why); return { status: 'skipped', reason: why }; } }
     else if (!d.engine.canStartScript(true)) return { status: 'skipped', reason: 'sprite-busy' };
-    running = true; if (d.holdBrain) d.holdBrain(8000);   // the random brain must not walk the sprite off while we look at the desktop
+    running = true; prepAbort = null; forced = !!opts.force; hold();
     const t0 = d.now(); let probe = null, result = { status: 'skipped', reason: 'no-target' };
     try {
       probe = d.makeProbe(); if (!probe.start()) throw new Error('probe did not start');
@@ -96,7 +119,7 @@ function createManager(d) {
   async function play(id, targets, env, probe, scan, model, displays) {
     const gag = G[id], e = d.engine, rects = {};
     for (const k of Object.keys(targets)) { const r = targets[k]; if (r && typeof r.w === 'number') rects[k] = r; }
-    if (!e.canStartScript(true)) return { status: 'skipped', id, reason: 'sprite-busy' };
+    { const why = gate(env); if (why) return { status: 'skipped', id, reason: why }; }
     const plan = gag.plan(targets, env);
     const first = Object.values(plan.tg)[0] || plan.area, disp = logic.displayAt(displays, logic.center(first));
     if (!disp || disp.id !== env.display.id) return { status: 'skipped', id, reason: disp ? 'other-display' : 'target-offscreen' };
@@ -104,6 +127,8 @@ function createManager(d) {
     const fg0 = scan.fg ? { h: scan.fg.h, r: logic.fromArr(scan.fg.r) } : null, layout0 = logic.layoutKey(displays);
     if (textMode && !model.textSig) return { status: 'skipped', id, reason: 'no-caret-signal' };
     if (logic.abortReason({ now: d.now(), startedAt: d.now(), cursor: d.cursor(), near, zones, layout0, layout: layout0, fg0, fg: fg0 })) return { status: 'skipped', id, reason: 'cursor-near-target' };
+    // 0. look again IMMEDIATELY before capturing: never take a crop of a password field or of another app
+    { const why = (await lookAgain(probe, scan, model, plan, displays)) || gate(env); if (why) return { status: 'skipped', id, reason: why }; }
     // 1. capture BEFORE any overlay exists (the sprite is hidden for the instant of the capture if it overlaps a target)
     let crops = {};
     const capKeys = {}; for (const k of Object.keys(plan.tg)) if (plan.tg[k].w > 1 && plan.tg[k].h > 1) capKeys[k] = plan.tg[k];
@@ -114,10 +139,7 @@ function createManager(d) {
       if (!crops) return { status: 'skipped', id, reason: 'capture-failed' };
     }
     // 2. nothing may have changed while we looked (foreground window, sprite state, display layout)
-    const chk = await probe.request('tick', 2000);
-    if (!chk || !chk.fg || (fg0 && (chk.fg.h !== fg0.h || !logic.sameRect(logic.fromArr(chk.fg.r), fg0.r, 2)))) return { status: 'skipped', id, reason: 'foreground-changed' };
-    if (logic.layoutKey(d.host.displays()) !== layout0) return { status: 'skipped', id, reason: 'display-changed' };
-    if (!e.canStartScript(true)) return { status: 'skipped', id, reason: 'sprite-busy' };
+    { const why = (await lookAgain(probe, scan, model, plan, displays)) || gate(env) || (logic.layoutKey(d.host.displays()) !== layout0 ? 'display-changed' : null); if (why) { crops = null; return { status: 'skipped', id, reason: why }; } }
     return await new Promise((resolve) => {
       let ended = false, startedAt = 0, mon = null, capT = null, probeBusy = false, tk = null, tkAt = d.now(), stopFlag = false, evI = 0, script = null, goT = null;
       const ctxBase = () => ({ now: d.now(), startedAt, near, zones, nearPx: 56, fg0, textMode, layout0 });
@@ -143,11 +165,11 @@ function createManager(d) {
         },
         cancel(en, why) { if (!ended) end(why === 'done' ? 'played' : 'aborted', why === 'done' ? '' : 'sprite-' + why); },
       };
-      const scene = { plan, ox: env.display.bounds.x, oy: env.display.bounds.y, w: env.display.bounds.width, h: env.display.bounds.height, crops };
+      const box = logic.overlayBox(plan.area, env.display.bounds), scene = { plan, ox: box.x, oy: box.y, w: box.w, h: box.h, crops };
       let readyT = setTimeout(() => end('skipped', 'overlay-timeout'), 4000);
       d.host.openOverlay(env.display, scene, () => {
         clearTimeout(readyT); if (ended) return;
-        startedAt = d.now() + 90; tkAt = d.now(); d.host.show();
+        startedAt = d.now() + 90; tkAt = d.now(); d.host.show(); if (d.onGo) d.onGo();
         if (!e.startScript(script, d.now())) return end('skipped', 'sprite-busy');
         d.host.go(startedAt);
         capT = setTimeout(() => end('aborted', 'time-cap'), logic.CAP_MS);
@@ -158,9 +180,9 @@ function createManager(d) {
             probeBusy = true; const asked = now;
             probe.request(textMode ? 'tick2' : 'tick', 1500).then((r) => { probeBusy = false; if (r) { tk = r; tkAt = d.now(); } else if (d.now() - asked > 1400) tk = null; });
           }
-          const fgNow = tk && tk.fg ? { h: tk.fg.h, r: logic.fromArr(tk.fg.r) } : null;
+          const pwNow = !!(tk && tk.pw), fgNow = tk && tk.fg ? { h: tk.fg.h, r: logic.fromArr(tk.fg.r) } : null;
           const why = logic.abortReason(Object.assign(ctxBase(), { now, cursor: d.cursor(), fg: fgNow, caret0: textMode ? model.textSig : null, caret: textMode && tk ? sigOf(tk) : null, layout: logic.layoutKey(d.host.displays()),
-            locked: f.locked, suspended: f.suspended, fullscreen: f.fullscreen, grabbed: e.dragging, stop: stopFlag, probeLost: !tk && now - startedAt > 1600 || now - tkAt > 1500 }));
+            locked: f.locked, suspended: f.suspended, fullscreen: f.fullscreen, grabbed: e.dragging, stop: stopFlag, pw: pwNow, probeLost: !tk && now - startedAt > 1600 || now - tkAt > 1500 }));
           if (why) end('aborted', why);
         }, TICK_MS);
       }, (m) => end('aborted', 'overlay-error: ' + m));
@@ -174,7 +196,7 @@ function createManager(d) {
   }
 
   const sigOf2 = null;
-  function stop(why) { if (cur) { cur.abort(why || 'stopped'); return true; } return false; }
+  function stop(why) { if (cur) { cur.abort(why || 'stopped'); return true; } if (running) { prepAbort = why || 'stopped'; return true; } return false; }
   return { start, stop, schedule, setChaos, isRunning: () => running, blocked, targets: () => (cur ? cur.near : null), hidePetForVerify: (on) => d.hidePet(on), _zonesOf: zonesOf };
 }
 module.exports = { createManager, TICK_MS, PROBE_MS };

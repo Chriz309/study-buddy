@@ -25,6 +25,17 @@ jobs:
       # package-lock.json pins every library version, so builds are reproducible
       - run: npm ci --no-audit --no-fund
 
+      # electron-builder uploads files in parallel and each upload tries to create the Release, so
+      # they race (422 already_exists). Create it first; the uploads then attach to it.
+      - name: Ensure the GitHub Release exists (main)
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="v$(node -p "require('./package.json').version")"
+          gh release view "$V" >/dev/null 2>&1 || gh release create "$V" --title "$V" --notes "Study Buddy $V" --target "$GITHUB_SHA"
+
       # main: publish a public Release (tag v<version>) so installed apps update.
       - name: Build & publish release (main)
         if: github.ref == 'refs/heads/main'

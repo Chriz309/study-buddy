@@ -135,6 +135,7 @@ test('forceRelease only acts on a live drag (watchdog safety net)', () => {
 test('a normal drop still behaves: cat (step gait) thrown up comes back and lands', () => {
   const { E } = setup(LAYOUTS.dual, { gait: 'step' });
   E.pos.x = 1000; E.pos.y = 900;
+  E.nextDecision = 1e12;   // keep the random brain quiet: a spontaneous jump would make onFloor false at the check
   E.grab(); E.vel.x = 0; E.vel.y = -1400; E.release();
   run(E, 5000);
   assert.ok(E.onFloor && geo.visibleFraction(E.pos, SIZE, LAYOUT) > 0.999);

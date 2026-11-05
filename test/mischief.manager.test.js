@@ -171,3 +171,15 @@ test('a target that moved between locating and opening the overlay (the tray shi
     } finally { r.done(); }
   }
 });
+
+test('target on another display: the sprite is brought over to the target display instead of skipping, and ends on-screen', async () => {
+  const D2 = { id: 2, bounds: { x: 1920, y: 0, width: 1536, height: 864 }, workArea: { x: 1920, y: 0, width: 1536, height: 824 }, scaleFactor: 1, phys: L.R(1920, 0, 1536, 864) };
+  const r = rig(); try {
+    r.st.displays = [D1, D2]; r.E.setWorld([D1, D2].map(x => ({ id: x.id, bounds: x.bounds, workArea: x.workArea })));
+    r.E.pos = { x: 2500, y: 824 - 60 }; r.E.onFloor = true; r.E.setState('idle', 0); r.E.nextDecision = 1e15; r.E.lastChange = Date.now();
+    const run = r.m.start({ only: 'tug', force: true }); await r.untilGo(); await r.wait(100);
+    assert.ok(r.E.pos.x < 1920, 'prank plays on the primary display: ' + r.E.pos.x);
+    const res = await run; assert.notEqual(res.reason, 'other-display'); assert.equal(r.cls.opened, r.cls.closed);
+    await r.wait(1500); assert.ok(r.E.pos.x >= 0 && r.E.pos.x <= 3456 - 60 && r.E.pos.y >= 0 && r.E.pos.y <= 1080, 'sprite on-screen: ' + JSON.stringify(r.E.pos));
+  } finally { r.done(); }
+});

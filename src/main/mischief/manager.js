@@ -153,6 +153,18 @@ function createManager(d) {
     const gag = G[id], e = d.engine, rects = {};
     for (const k of Object.keys(targets)) { const r = targets[k]; if (r && typeof r.w === 'number') rects[k] = r; }
     { const why = gate(env); if (why) return { status: 'skipped', id, reason: why }; }
+    // the target is on another display than the sprite: bring the sprite over (fall in from the top at the nearest edge) instead of skipping
+    { const t0 = Object.values(targets).find(r => r && typeof r.w === 'number' && r.w > 1), td = t0 && logic.displayAt(displays, logic.center(t0));
+      if (td && td.id !== env.display.id) {
+        const f = d.flags();
+        if (f.stayPut || f.reduceMotion || e.settings.stayPut || e.settings.reduceMotion) return { status: 'skipped', id, reason: 'quiet' };
+        const S = env.S, wa = td.workArea, fromRight = env.sx > wa.x + wa.width / 2, nx = fromRight ? wa.x + wa.width - S - 4 : wa.x + 4;
+        e.pos.x = nx; e.pos.y = wa.y - S; e.vel.x = 0; e.vel.y = 0; e.onFloor = false; e.facing = fromRight ? -1 : 1; e.setState('fall', 1e9); d.emit('jump');
+        for (let i = 0; i < 40 && !(e.onFloor && (e.state === 'idle' || e.state === 'sit')); i++) { hold(); await d.sleep(60); if (e.dragging) break; }
+        const w0 = gate({ sx: e.pos.x, sy: e.pos.y }); if (w0) return { status: 'skipped', id, reason: w0 };
+        env = makeEnv(displays); if (!env) return { status: 'skipped', id, reason: 'sprite-offscreen' };
+        if (env.display.id !== td.id) return { status: 'skipped', id, reason: 'other-display' };
+      } }
     const plan = gag.plan(targets, env);
     const first = Object.values(plan.tg)[0] || plan.area, disp = logic.displayAt(displays, logic.center(first));
     if (!disp || disp.id !== env.display.id) return { status: 'skipped', id, reason: disp ? 'other-display' : 'target-offscreen' };

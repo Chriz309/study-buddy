@@ -82,7 +82,10 @@ function load() {
   return state;
 }
 
-let lastBackup = 0;
+let lastBackup = 0, onError = null, loggedOk = false;
+// optional hook (dev builds only, set from main.js): (kind, code, path) - error code and file path only, never contents
+function setErrorHook(fn) { onError = typeof fn === 'function' ? fn : null; }
+const note = (kind, e, f) => { if (onError) { try { onError(kind, (e && e.code) || 'ERR', f); } catch {} } };
 function writeNow() {
   const file = FILE(), tmp = TMP();
   const data = JSON.stringify(state, null, 2);
@@ -95,9 +98,11 @@ function writeNow() {
       try { readSave(file); fs.copyFileSync(file, BAK()); lastBackup = Date.now(); } catch {}
     }
     fs.renameSync(tmp, file);   // atomic swap (replaces the old file on Windows/macOS too)
+    if (!loggedOk) { loggedOk = true; note('write-ok', null, file); }
   } catch (e) {
+    note('write-failed', e, file);
     // e.g. antivirus briefly locking the file: fall back to a direct write
-    try { fs.writeFileSync(file, data); } catch {}
+    try { fs.writeFileSync(file, data); if (!loggedOk) { loggedOk = true; note('write-ok-fallback', null, file); } } catch (e2) { note('write-fallback-failed', e2, file); }
   }
 }
 
@@ -117,4 +122,4 @@ function get() { return state; }
 function set(patch) { state = deepMerge(state, patch); save(); return state; }
 function replace(next) { state = next; save(); return state; }
 
-module.exports = { load, save, saveNow, get, set, replace };
+module.exports = { setErrorHook, load, save, saveNow, get, set, replace };

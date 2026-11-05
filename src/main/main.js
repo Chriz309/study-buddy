@@ -37,6 +37,7 @@ function devLog(...a) {
     fs.appendFileSync(DEV_LOG, line + '\n'); } catch {} }
   if (DEV) console.log(line);
 }
+if (DEV) store.setErrorHook((kind, code, file) => devLog('store ' + kind + ' ' + code + ' ' + file));
 function logError(where, e) {
   const msg = where + ': ' + (e && e.stack || e);
   try { console.error(msg); } catch {}

@@ -232,6 +232,8 @@ const Engine = {
   // the window hiding cancel it, and a time cap guarantees it can never get stuck.
   // A resting-walk is not "busy": stop it where it is so a due antic/prank can start (never touches scripts, drags, sleep, jumps, climbs).
   settle(){ if(this.script||this.dragging||this.moveType==='float'||this.parachute) return false;
+    if(this.onLedge()){ this.ledge=null; this.target=null; this.onFloor=false; this.vel.x=0; this.vel.y=0; this._wantClimb=this._peeking=this._zoom=false; this._climbStopY=null;   // perched on a window: step down to the ground
+      this.setState('fall',1e9); this.nextDecision=Math.max(this.nextDecision||0,(this._now||0)+3500); return true; }
     const st=this.state; if(st!=='walk'&&st!=='climb'&&st!=='fall') return false;
     this._wantClimb=this._peeking=this._zoom=false; this._climbStopY=null;
     if(st==='walk'){ this.target=null; this.vel.x=0; this.setState('idle',900); }          // stop where it is (a hop in flight just lands)

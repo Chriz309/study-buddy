@@ -162,3 +162,15 @@ test('a settings change (refresh) recomputes from the time since the cycle began
     assert.ok(d1 <= d0 - 19 && d1 >= 2, `after 20 s of ${d0} s the remaining wait is ~${d0 - 20} s, got ${d1}`);
   } finally { r.stop(); }
 });
+
+test('settle(): a walking, climbing or window-perched sprite is brought to rest on the ground so an antic/prank can start; scripts, drags and sleep are left alone', () => {
+  const E = freshEngine(); E.init({ event: () => {}, toy: () => {}, state: () => {} }, 0); E.setWorld(LAYOUT); E.setSize(SIZE);
+  E.settings = { speed: 1, personality: 'chill', mischief: 25 }; E.moveType = 'walk'; E.gait = 'step'; E.pos = geo.homePosition(SIZE, LAYOUT, null); E.onFloor = true; E.setState('idle', 0); E.nextDecision = 1e12;
+  let now = 100; const tick = (ms) => { for (let i = 0; i < ms / 16; i++) { now += 16; E.tick(now); } };
+  tick(100);
+  E.target = 1500; E.setState('walk', 1e9); assert.equal(E.canStartScript(), false); assert.ok(E.settle()); tick(1500); assert.ok(E.canStartScript(), 'walking sprite is startable after settling');
+  E.ledge = { x0: 0, x1: 1900, y: 500 }; E.pos.y = 500 - SIZE; E.onFloor = true; assert.ok(E.onLedge()); assert.equal(E.canStartScript(), false);
+  assert.ok(E.settle()); tick(2500); assert.ok(!E.onLedge() && E.canStartScript(), 'stepped down from the window ledge');
+  E.setState('sleep', 1e9); assert.equal(E.settle(), false, 'sleep is left alone'); E.setState('idle', 0);
+  E.grab(); assert.equal(E.settle(), false, 'drag is left alone');
+});

@@ -73,6 +73,12 @@ function load() {
     state.version = 4;
     save();
   }
+  // migration → v5 (v0.6): adds Captain Cram + the `antics` setting. Nothing to rewrite: new
+  // characters live in the catalog (existing `owned`/`active` stay valid) and new settings are
+  // filled in from DEFAULTS by the merge above. Just stamp the version.
+  if (state.version < 5) { state.version = 5; save(); }
+  // an unknown active character (e.g. a save from a newer build) falls back to Blob
+  if (!state.owned.includes(state.active)) state.active = 'blob';
   return state;
 }
 

@@ -23,8 +23,20 @@ const GUMBALL_COST = 300000;
 const CHARACTERS = [
   { id: 'blob',  name: 'Blob', tier: 1, move: 'walk',  rarity: 'common',   cost: 0,   personality: 'sunny', blurb: 'A cheerful little slime. Squishy, glossy, alive.', implemented: true },
   { id: 'ghost', name: 'Boo',  tier: 1, move: 'float', rarity: 'uncommon', cost: 600, personality: 'shy',   blurb: 'A bashful ghost — floats, swirls, and phases in and out.', implemented: true },
-  { id: 'cat',   name: 'Pib',  tier: 1, move: 'walk',  gait: 'step', rarity: 'rare', cost: 900, personality: 'playful', blurb: 'A cozy orange tabby — strolls about, sits to watch, and curls up for naps.', implemented: true },
+  { id: 'cat',   name: 'Pib',  tier: 1, move: 'walk',  gait: 'step', rarity: 'rare', cost: 900, personality: 'playful', blurb: 'A cozy orange tabby — strolls about, sits to watch, and curls up for naps. Now and then it spots a butterfly and gives chase.', implemented: true },
+  // Tier 2: only enters the gumball machine once every tier-1 buddy is adopted (see rollPool).
+  { id: 'hero',  name: 'Captain Cram', tier: 2, move: 'walk', gait: 'step', rarity: 'unique', cost: 1500, personality: 'hyper', blurb: 'A tiny 16-bit caped crusader fuelled by revision. Leaps off the top of the screen, patrols the skies and powers up with +1 INT.', implemented: true },
 ];
+
+// Which buddies the gumball machine can hand out for a given owned list. A higher tier only
+// unlocks once every implemented buddy of the tier below is owned (tier 1 is always open).
+function tierUnlocked(tier, owned) {
+  for (const c of CHARACTERS) if (c.implemented && c.tier < tier && !owned.includes(c.id)) return false;
+  return true;
+}
+function rollPool(owned) { return CHARACTERS.filter(c => c.implemented && !owned.includes(c.id) && tierUnlocked(c.tier || 1, owned)); }
+// implemented, not owned, but still behind a tier gate
+function lockedIds(owned) { return CHARACTERS.filter(c => c.implemented && !owned.includes(c.id) && !tierUnlocked(c.tier || 1, owned)).map(c => c.id); }
 
 const RARITIES = {
   common:    { label: 'Common',    color: '#9aa4b2' },
@@ -42,7 +54,7 @@ const PERSONALITIES = ['chill', 'hyper', 'sleepy', 'naughty'];
 const IMPLEMENTED_IDS = CHARACTERS.filter(c => c.implemented).map(c => c.id);
 
 const DEFAULTS = {
-  version: 4,
+  version: 5,
   sparks: 800,                 // a little to play with — enough for a first gumball crank
   active: 'blob',
   owned: ['blob'],             // start with just Blob; everyone else lives in the gumball machine
@@ -66,9 +78,10 @@ const DEFAULTS = {
     roamMonitors: true,        // cross to other monitors
     windowAware: true,         // perch on the active window's top edge (Windows)
     showAll: false,            // show every owned pet at once (future multi-pet)
+    antics: true,              // now-and-then special antics (cat butterfly chase, Captain Cram's stunts)
   },
 };
 
 function characterById(id) { return CHARACTERS.find(c => c.id === id); }
 
-module.exports = { CURRENCY, DEV_TOOLS, GUMBALL_COST, CHARACTERS, RARITIES, PERSONALITIES, DEFAULTS, characterById, IMPLEMENTED_IDS };
+module.exports = { tierUnlocked, rollPool, lockedIds, CURRENCY, DEV_TOOLS, GUMBALL_COST, CHARACTERS, RARITIES, PERSONALITIES, DEFAULTS, characterById, IMPLEMENTED_IDS };

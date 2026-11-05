@@ -5,6 +5,7 @@
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sign=(v)=>v<0?-1:1;
+const geo=require('../shared/geometry');
 
 const Engine = {
   hooks:{}, size:140, baseSpeed:80, moveType:'walk', gait:'hop',
@@ -12,12 +13,16 @@ const Engine = {
   state:'idle', stateUntil:0, nextDecision:0, lastChange:0, target:null,
   onFloor:false, dragging:false, parachute:false, _chuteRolled:false, _wrapping:false, recent:[], cursor:{x:0,y:0},
   settings:{speed:1,personality:'chill',mischief:25},
-  world:{x0:0,y0:0,x1:1280,y1:720,floors:[]}, ledge:null, lastTick:0, _wantClimb:false, _peeking:false, _climbStopY:null,
+  world:{x0:0,y0:0,x1:1280,y1:720,floors:[]}, displays:[], script:null, ledge:null, lastTick:0, _wantClimb:false, _peeking:false, _climbStopY:null,
 
   init(hooks, now){ this.hooks=hooks||{}; this.lastTick=now; this.lastChange=now; },
 
   // displays: electron screen.getAllDisplays() (bounds/workArea in DIP). Global coords.
   setWorld(displays){
+    // a transient empty list (display sleep / RDP / dock changes) would make the world infinite and
+    // park the pet nowhere: keep the last good layout instead.
+    if(!displays||!displays.length) return;
+    this.displays=displays.map(d=>({id:d.id,bounds:{x:d.bounds.x,y:d.bounds.y,width:d.bounds.width,height:d.bounds.height},workArea:{x:d.workArea.x,y:d.workArea.y,width:d.workArea.width,height:d.workArea.height}}));
     let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
     for(const d of displays){ const b=d.bounds; minX=Math.min(minX,b.x); minY=Math.min(minY,b.y); maxX=Math.max(maxX,b.x+b.width); maxY=Math.max(maxY,b.y+b.height); }
     this.world={ x0:minX,y0:minY,x1:maxX,y1:maxY,
@@ -34,8 +39,9 @@ const Engine = {
   _floatPoint(){ const S=(this.screens&&this.screens.length)?this.screens[(Math.random()*this.screens.length)|0]
       :{x0:this.world.x0,y0:this.world.y0,x1:this.world.x1,y1:this.world.y1};
     return { x:rnd(S.x0+40,S.x1-40), y:rnd(S.y0+40, S.y0+(S.y1-S.y0)*0.62) }; },
-  setMoveType(t){ if(t&&t!==this.moveType){ this.moveType=t; this.target=null; this._wantClimb=this._peeking=false; this._climbStopY=null; this._wrapping=false; this.onFloor=(t!=='float'); this.setState('idle',300); } },
+  setMoveType(t){ if(t&&t!==this.moveType){ this.cancelScript('char'); this.moveType=t; this.target=null; this._wantClimb=this._peeking=false; this._climbStopY=null; this._wrapping=false; this.onFloor=(t!=='float'); this.setState('idle',300); } },
   setSettings(s){ Object.assign(this.settings,s);
+    if(s&&(s.stayPut||s.reduceMotion)) this.cancelScript('settings');
     if(s&&s.stayPut){ this.target=null; this._wantClimb=this._peeking=false; this._wrapping=false; }  // settle where it is
   },
   _pick(w){ const keys=Object.keys(w); let sum=keys.reduce((a,k)=>a+Math.max(0,w[k]),0), r=Math.random()*sum, ch='idle';
@@ -45,12 +51,15 @@ const Engine = {
   onLedge(){ const L=this.ledge; if(!L||!this.onFloor) return false; const cx=this.pos.x+this.size/2; return cx>=L.x0&&cx<=L.x1&&Math.abs(this.pos.y-(L.y-this.size))<3; },
   floorAt(x){ const cx=x+this.size/2; let best=null;
     for(const f of this.world.floors) if(cx>=f.x0&&cx<=f.x1) best=best==null?f.y:Math.max(best,f.y);
-    if(best==null) best=this.world.y1; let fy=best-this.size;
+    if(best==null){ // centre is in a gap between monitors: use the NEAREST monitor's floor, not the bottom of the whole desktop
+      let bd=Infinity; for(const f of this.world.floors){ const dd=cx<f.x0?f.x0-cx:cx-f.x1; if(dd<bd){ bd=dd; best=f.y; } }
+      if(best==null) best=this.world.y1; }
+    let fy=best-this.size;
     // the active window's top edge is a ledge: land/perch on it only when at or above it
     const L=this.ledge; if(L&&cx>=L.x0&&cx<=L.x1){ const ly=L.y-this.size; if(ly<fy && this.pos.y<=ly+6) fy=ly; }
     return fy; },
 
-  grab(){ this.dragging=true;
+  grab(){ this.cancelScript('drag'); this.dragging=true; this.target=null; this._wantClimb=this._peeking=false; this._climbStopY=null; this._wrapping=false;
     if(this.parachute){ this.parachute=false; this.hooks.event&&this.hooks.event('parachuteClose'); }  // don't leave a chute stuck when caught
     this._chuteRolled=false; this.setState('drag',1e9); this.hooks.event&&this.hooks.event('grab'); },
   dragTo(x,y){ const nx=clamp(x-this.size/2,this.world.x0-this.size*0.3,this.world.x1-this.size*0.7);
@@ -109,8 +118,9 @@ const Engine = {
   peek(){ const toLeft=Math.random()<.5; this.target=toLeft?this.world.x0-this.size*0.35:this.world.x1-this.size*0.65; this.setState('walk',1e9); this._peeking=true; },
 
   tick(now){ const dt=Math.min(0.05,(now-this.lastTick)/1000); this.lastTick=now; this._now=now;
-    if(!this.dragging) this.step(dt,now);
-    if(!this.dragging&&this.state!=='sleep'&&this.state!=='drag'&&this.state!=='climb'&&now-this.lastChange>7000){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
+    if(!this.dragging){ if(this.script) this._runScript(dt,now); else this.step(dt,now); }
+    if(!this.dragging&&!this.script&&this.state!=='sleep'&&this.state!=='drag'&&this.state!=='climb'&&now-this.lastChange>7000){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
+    if(!this.dragging&&!this.script&&this.moveType!=='float'&&!this._wrapping) this._pullOntoScreens();
     // never let a non-finite position escape the tick (belt-and-braces; e.g. a
     // stray NaN from the floating/cursor-avoid math would crash the window move)
     if(!isFinite(this.pos.x)||!isFinite(this.pos.y)){
@@ -143,7 +153,9 @@ const Engine = {
         if(Math.random()<0.35){ this.parachute=true; if(this.vel.y>120)this.vel.y=120; this.hooks.event&&this.hooks.event('parachuteOpen'); } }
       const g=this.parachute?520:2300; this.vel.y+=g*dt;
       if(this.parachute){ if(this.vel.y>150)this.vel.y=150; this.pos.x+=Math.sin(now/480)*22*dt; }
-      this.pos.y+=this.vel.y*dt; this.onFloor=false; this.pos.x+=this.vel.x*dt; this.vel.x*=(1-dt*(this.parachute?2.4:1.6));
+      this.pos.y+=this.vel.y*dt; this.onFloor=false; this.pos.x+=this.vel.x*dt;
+      // ceiling: a hard upward flick (esp. with the parachute's weak gravity) used to carry the pet hundreds of px above the screen for seconds
+      if(this.pos.y<this.world.y0){ this.pos.y=this.world.y0; if(this.vel.y<0) this.vel.y=0; } this.vel.x*=(1-dt*(this.parachute?2.4:1.6));
       if(this.parachute && (fy-this.pos.y)<46){ this.parachute=false; this.hooks.event&&this.hooks.event('parachuteClose'); } }
     if(this.pos.y>=fy){
       if(!this.onFloor){ if(this.parachute){ this.parachute=false; this.hooks.event&&this.hooks.event('parachuteClose'); }
@@ -188,6 +200,47 @@ const Engine = {
     else { this._wrapping=false; this.target=this._floatPoint(); if(Math.random()<.35)this.hooks.event&&this.hooks.event('say',{kind:'idle'}); this.setState('idle',0); }
     this.nextDecision=now+rnd(2600,4800);
   },
+  // --- safety: keep the pet reachable ---------------------------------------
+  // Centre of the sprite in a dead zone (outside every monitor: gaps/offsets between monitors of different
+  // sizes, a monitor that was unplugged) -> pull it back onto the nearest monitor.
+  _pullOntoScreens(){ if(!this.displays.length) return;
+    if(geo.displayAt(this.displays,this.pos.x+this.size/2,this.pos.y+this.size/2)) return;
+    const c=geo.clampSpriteToDisplays(this.pos,this.size,this.displays);
+    if(c.moved){ this.pos.x=c.x; this.pos.y=c.y; this.vel.x=0; this.vel.y=0; this.onFloor=false; this._wantClimb=this._peeking=false; this.target=null; } },
+  // Watchdog / "Bring buddy back": cancel everything, clear every interaction flag, put the pet
+  // back on a real monitor (at `at` if given) and let it settle to the floor.
+  rescue(at){ this.cancelScript('rescue');
+    if(this.parachute){ this.parachute=false; this.hooks.event&&this.hooks.event('parachuteClose'); }
+    this.dragging=false; this.vel.x=0; this.vel.y=0; this.target=null; this._wantClimb=this._peeking=false; this._climbStopY=null; this._wrapping=false;
+    this._chuteRolled=false; this.onFloor=false;
+    if(at&&geo.finite(at.x)&&geo.finite(at.y)){ this.pos.x=at.x; this.pos.y=at.y; }
+    else { const c=geo.clampSpriteToDisplays(this.pos,this.size,this.displays); this.pos.x=c.x; this.pos.y=c.y; }
+    if(!geo.finite(this.pos.x)||!geo.finite(this.pos.y)){ const h=geo.homePosition(this.size,this.displays); this.pos.x=h.x; this.pos.y=h.y; }
+    this.setState('idle',600); },
+  // Drop a drag that the renderer never finished (lost pointerup, renderer crash/reload, window hidden mid-drag).
+  forceRelease(){ if(!this.dragging) return false; this.release(); return true; },
+
+  // --- scripted antics (cat chase, hero stunts) -------------------------------
+  // A script is { name, maxMs, update(engine,dt,now) -> true when finished, cancel?(engine,reason) }.
+  // While one runs the normal brain is suspended. Dragging, rescue, a character swap, stay-put or
+  // the window hiding cancel it, and a time cap guarantees it can never get stuck.
+  canStartScript(){ return !this.script && !this.dragging && this.onFloor && !this.settings.stayPut && !this.parachute
+    && (this.state==='idle'||this.state==='sit') && !this.onLedge() && this.displays.length>0; },
+  currentDisplay(){ const d=geo.displayForSprite(this.pos,this.size,this.displays)||this.displays[0]; return d?{x0:d.workArea.x,x1:d.workArea.x+d.workArea.width,y0:d.workArea.y,y1:d.workArea.y+d.workArea.height}:{x0:this.world.x0,x1:this.world.x1,y0:this.world.y0,y1:this.world.y1}; },
+  startScript(s,now){ if(!this.canStartScript()) return false;
+    this.script=s; this._scriptAt=now==null?this._now:now; this.target=null; this._wantClimb=this._peeking=false; this.vel.x=0; this.vel.y=0;
+    try{ s.init&&s.init(this,this._scriptAt); }catch(err){ this.script=null; return false; }
+    return true; },
+  cancelScript(reason){ const s=this.script; if(!s) return false; this.script=null;
+    try{ s.cancel&&s.cancel(this,reason||'cancel'); }catch(err){}
+    this._scriptCleanup(); return true; },
+  _runScript(dt,now){ const s=this.script; let done=false;
+    try{ done=!!s.update(this,dt,now); if(now-this._scriptAt>(s.maxMs||20000)+1500) done=true; }catch(err){ done=true; }
+    if(done&&this.script===s){ this.script=null; try{ s.cancel&&s.cancel(this,'done'); }catch(err){} this._scriptCleanup(); } },
+  _scriptCleanup(){ this.hooks.toy&&this.hooks.toy({type:'end'});
+    this.target=null; this.vel.x=0; this.vel.y=0; this.onFloor=false; this.lastChange=this._now||0;
+    const c=geo.clampSpriteToDisplays(this.pos,this.size,this.displays); if(this.displays.length){ this.pos.x=c.x; this.pos.y=c.y; }
+    if(this.state!=='sleep') this.setState('idle',700); },
   hitTest(x,y,pad){ pad=(pad==null)?14:pad; return x>=this.pos.x-pad&&x<=this.pos.x+this.size+pad&&y>=this.pos.y-pad&&y<=this.pos.y+this.size+pad; },
 };
 module.exports = Engine;

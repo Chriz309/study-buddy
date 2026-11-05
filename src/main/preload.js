@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('buddy', {
   // pet input (coords local to this window's display)
   petGrab:       () => ipcRenderer.send('pet:grab'),
   petDrag:       (x, y) => ipcRenderer.send('pet:drag', { x, y }),
+  petDragPing:   () => ipcRenderer.send('pet:dragPing'),
   petRelease:    () => ipcRenderer.send('pet:release'),
   petTap:        () => ipcRenderer.send('pet:tap'),
 

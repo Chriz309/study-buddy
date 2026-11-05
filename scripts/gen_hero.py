@@ -30,6 +30,9 @@ PAL = {
     'y': (201, 143, 16),   # gold shade
     'W': (255, 255, 255),  # eyes / glint
     'M': (20, 32, 79),     # mask
+    'g': (66, 58, 70),     # soot
+    'G': (128, 128, 140),  # smoke
+    'L': (255, 247, 160),  # bolt core
 }
 
 
@@ -337,6 +340,96 @@ def f_sleep():
     c.outline(); return c
 
 
+# ---------------------------------------------------------------- desktop-mischief reaction frames (v0.7)
+def spikes(c, dy=0):
+    """hair standing on end (shock / frazzled)"""
+    for x, h in ((15, 3), (17, 5), (19, 6), (21, 5), (23, 4), (24, 2)):
+        c.rect(x, 7 + dy - h, x, 7 + dy, 'H')
+    c.px(19, 0 + dy, 'h') if dy >= 0 and False else None
+
+
+def f_shock():
+    """zapped: arms stiff out, hair on end, wide eyes, open mouth, yellow bolts around the body"""
+    c = Cv()
+    cape_back(c, 0, 19, 33)
+    legs_front(c, 1)
+    torso_front(c)
+    arm(c, 8, 20, 28, 3, True); arm(c, 29, 20, 28, 3, False)
+    c.rect(11, 20, 13, 22, 'B'); c.rect(26, 20, 28, 22, 'B')
+    head_front(c, 0, 'open', 'open')
+    spikes(c, 0)
+    for (x, y) in ((4, 8), (5, 9), (6, 8), (34, 6), (33, 7), (35, 8), (3, 26), (4, 27), (36, 24), (35, 25), (9, 2), (30, 3)):
+        c.px(x, y, 'L'); c.px(x + 1, y + 1, 'Y')
+    c.outline(); return c
+
+
+def f_frazzled():
+    """singed: soot-streaked face, wild hair, limp arms, smoke curling off the head"""
+    c = Cv()
+    cape_back(c, 1, 19, 33)
+    legs_front(c, 0)
+    torso_front(c)
+    arm(c, 12, 20, 29, 3, True); arm(c, 25, 20, 29, 3, False)
+    head_front(c, 1, 'open', 'flat')
+    spikes(c, 1)
+    for y in range(9, 19):                       # soot over hair and face
+        for x in range(15, 25):
+            if c.get(x, y) in ('S', 's', 'H') and (x * 3 + y * 5) % 4 == 0:
+                c.px(x, y, 'g')
+    c.rect(17, 12, 22, 14, 'g') if False else None
+    for (x, y) in ((16, 3), (17, 2), (17, 0), (22, 3), (23, 1), (23, 0), (19, 1)):
+        c.px(x, y, 'G')
+    c.outline(); return c
+
+
+def f_pull():
+    """braced and leaning back, both gloves gripping something out in front (pulling / pushing)"""
+    c = Cv()
+    for k, y in enumerate(range(19, 32)):         # cape streaming back
+        t = k / 12
+        for x in range(3 + int(t * 5), 15 - int(t)):
+            c.px(x, y, 'r' if (x == 3 + int(t * 5) or y == 19) else 'R')
+    c.rect(8, 31, 14, 34, 'b'); c.rect(5, 35, 13, 38, 'R'); c.rect(5, 35, 13, 35, 'Y'); c.rect(5, 38, 13, 38, 'r')     # back leg braced far behind
+    c.rect(19, 31, 23, 34, 'B'); c.rect(17, 35, 25, 38, 'R'); c.rect(17, 35, 25, 35, 'Y'); c.rect(17, 38, 25, 38, 'r')  # front leg planted
+    c.rect(13, 19, 21, 28, 'B'); c.rect(13, 19, 13, 28, 'b'); c.rect(15, 21, 19, 25, 'B')
+    c.rect(13, 28, 21, 28, 'Y'); c.rect(13, 29, 21, 30, 'R')
+    for j, row in enumerate(["YYYY", "YCCY", "YCYY", "YYYY"]):
+        for i, ch in enumerate(row):
+            c.px(15 + i, 21 + j, 'Y' if ch == 'Y' else 'B')
+    c.rect(20, 21, 30, 24, 'B'); c.rect(20, 21, 30, 21, 'l'); c.rect(30, 20, 34, 25, 'Y'); c.rect(30, 25, 34, 25, 'y')   # arms out front, gripping
+    c.rect(18, 24, 28, 26, 'b'); c.rect(28, 24, 31, 27, 'Y')
+    side_head(c, 11, 9, 'open')
+    c.rect(18, 15, 19, 15, 'Y') if False else None
+    c.px(22, 15, 's'); c.px(23, 15, 's')                                                                                # gritted teeth
+    c.outline(); return c
+
+
+def f_juggle():
+    """arms straight up, gloves open, three bright balls in the air above"""
+    c = Cv()
+    cape_back(c, 0, 19, 33)
+    legs_front(c, 1)
+    torso_front(c, 2)
+    for x0 in (11, 26):
+        c.rect(x0, 20, x0 + 2, 23, 'B')
+    for i in range(7):
+        c.rect(10 - i // 3, 19 - i, 12 - i // 3, 19 - i, 'B'); c.rect(27 + i // 3, 19 - i, 29 + i // 3, 19 - i, 'B')
+    c.rect(5, 9, 8, 12, 'Y'); c.rect(31, 9, 34, 12, 'Y'); c.rect(5, 12, 8, 12, 'y'); c.rect(31, 12, 34, 12, 'y')
+    head_front(c, 2, 'happy', 'smile')
+    for (x, y, col) in ((12, 1, 'p'), (19, 0, 'Y'), (26, 2, 'l')):
+        c.rect(x, y, x + 2, y + 2, col); c.px(x, y, 'W')
+    c.outline(); return c
+
+
+def f_peek():
+    """just the head and two gloves on the edge of the frame: used when popping up out of the taskbar"""
+    c = Cv()
+    head_front(c, 17, 'open', 'smile')
+    c.rect(9, 33, 13, 36, 'Y'); c.rect(26, 33, 30, 36, 'Y'); c.rect(9, 36, 13, 36, 'y'); c.rect(26, 36, 30, 36, 'y')
+    c.rect(11, 37, 28, 39, 'B')
+    c.outline(); return c
+
+
 FRAMES = [
     ('idle',        lambda: f_idle(0, 'open')),
     ('idle2',       lambda: f_idle(1, 'open')),
@@ -351,6 +444,12 @@ FRAMES = [
     ('land',        f_land),
     ('happy',       f_happy),
     ('sleep',       f_sleep),
+    # desktop mischief reaction frames (v0.7)
+    ('shock',       f_shock),
+    ('frazzled',    f_frazzled),
+    ('pull',        f_pull),
+    ('juggle',      f_juggle),
+    ('peek',        f_peek),
 ]
 
 

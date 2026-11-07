@@ -10,7 +10,7 @@ Needs only Pillow (already used by the other sprite scripts). Run from the repo 
     python scripts/gen_hero.py            # writes both outputs
     python scripts/gen_hero.py --sheet-only
 """
-import base64, io, os, sys
+import base64, io, math, os, sys
 from PIL import Image, ImageDraw
 
 W = H = 40
@@ -209,6 +209,27 @@ def f_flex():
     c.outline(); return c
 
 
+def cape_side(c, sx, ytop, yhem, L, lift=0, ph=0, slope=0.5, rise=0.5):
+    """Cape in profile (hero faces right). It hangs from the shoulders (sx, ytop) BEHIND the body, narrow at the neck and
+    widening as it flows back to a scalloped hem. L = how far it streams back; lift = how much the trailing tip is blown up
+    by motion; ph = phase of the hem ripple. The torso and arm are drawn over its front edge."""
+    for d in range(0, L + 1):
+        x = sx - d
+        u = d / float(L)
+        top = ytop + int(round(d * slope)) - int(round(lift * u * 2.2))
+        bot = yhem - int(round(d * rise)) - int(round(lift * u * u * 4)) + (1 if d > 2 and (d + ph) % 4 < 2 else 0)
+        if bot < top + 2: bot = top + 2
+        for y in range(top, bot + 1):
+            col = 'R'
+            if y == top or y >= bot or d == L:
+                col = 'r'                                    # shaded rim: collar line, hem, trailing edge
+            elif d >= 2 and y == top + 2 and d % 2 == 0:
+                col = 'p'                                    # light catching the upper fold
+            elif d >= 4 and y == top + 5:
+                col = 'r'                                    # fold shadow, parallel to the streaming direction
+            c.px(x, y, col)
+
+
 def side_head(c, x, y, eye='open'):
     """side view head facing right; (x,y) = top-left of a 10x10 box"""
     c.rect(x + 1, y, x + 8, y + 2, 'H'); c.rect(x, y + 1, x + 4, y + 7, 'H')          # hair, back of head
@@ -224,14 +245,8 @@ def side_head(c, x, y, eye='open'):
 def f_walk(i):
     c = Cv()
     bob = 1 if i in (1, 3) else 0
-    # cape streaming back (left), flapping per frame
-    flap = (0, 1, 2, 1)[i]
-    for k, y in enumerate(range(18 + bob, 31 + bob)):
-        t = k / 12
-        x1 = 17 - int(t * 1)            # attaches at the shoulders
-        x0 = 4 + int(t * 6) + flap * (1 if k > 4 else 0) - (flap if k > 7 else 0)
-        for x in range(x0, x1 + 1):
-            c.px(x, y, 'r' if (x == x0 or y == 18 + bob) else ('p' if x == x0 + 3 else 'R'))
+    # cape: hangs from the shoulders behind the back and streams out further / higher as the stride flaps it
+    cape_side(c, 17, 18 + bob, 34 + bob, (11, 13, 12, 13)[i], lift=(0, 1, 2, 1)[i] * 0.5, ph=i * 2, slope=0.3, rise=0.85)
     # legs
     legs = {0: (4, -4, 0, 0), 1: (0, 0, 2, 0), 2: (-4, 4, 0, 0), 3: (0, 0, 0, 2)}[i]   # (front dx, back dx, front lift, back lift)
     def leg(dx, lift, back):
@@ -261,13 +276,14 @@ def f_walk(i):
 
 def f_fly():
     c = Cv()
-    # long cape streaming behind (left), rippling
-    for x in range(1, 16):
-        t = (15 - x) / 14
-        top = 15 + int(t * 2) + (1 if x % 4 < 2 else 0)
-        bot = 24 - int(t * 1) + (2 if x % 5 < 2 else 0) + int(t * 2)
+    # long cape streaming straight back from the shoulders, tapering to a rippling tip
+    for x in range(1, 17):
+        d = 16 - x; u = d / 15.0
+        mid = 19.5 + math.sin(d * 0.55) * (0.6 + 1.8 * u)          # centre line ripples more toward the tip
+        half = 4.2 * (1 - u) + 1.4
+        top, bot = int(round(mid - half)), int(round(mid + half))
         for y in range(top, bot + 1):
-            c.px(x, y, 'r' if (y in (top, bot) or x == 1) else ('p' if y == top + 2 and x % 2 else 'R'))
+            c.px(x, y, 'r' if (y == top or y == bot or x == 1) else ('p' if y == top + 1 and d % 3 == 0 else ('r' if d % 4 == 3 else 'R')))
     # legs trailing behind, together
     c.rect(7, 19, 14, 21, 'B'); c.rect(7, 19, 14, 19, 'l'); c.rect(7, 21, 14, 21, 'b')
     c.rect(3, 18, 8, 22, 'R'); c.rect(3, 18, 3, 22, 'r'); c.rect(7, 18, 7, 22, 'Y')       # boots
@@ -292,12 +308,8 @@ def f_fly():
 def f_land():
     """superhero 3-point landing: one fist + knee down, cape thrown up behind"""
     c = Cv()
-    # cape flung up and back
-    for k, y in enumerate(range(14, 31)):
-        t = k / 16
-        x0 = 6 + int(t * 3) - (2 if k % 5 == 0 else 0); x1 = 20 + int(t * 1)
-        for x in range(x0, x1 + 1):
-            c.px(x, y, 'r' if (x == x0 or y == 14) else ('p' if x == x0 + 3 and k % 2 == 0 else 'R'))
+    # cape flung up and back by the landing: hangs from the shoulders, billowing up behind
+    cape_side(c, 19, 21, 33, 13, lift=2.0, ph=1, slope=0.1, rise=0.8)
     for x in range(7, 20):
         if x % 3 == 0: c.px(x, 31, 'r')
     # back leg extended behind
@@ -325,10 +337,10 @@ def f_land():
 def f_sleep():
     """lying on his side, cape for a blanket, boots poking out, eyes shut"""
     c = Cv()
-    # head on the left, hair, mask, closed eyes
-    c.rect(4, 30, 13, 37, 'S'); c.rect(4, 29, 13, 31, 'H'); c.rect(3, 30, 6, 36, 'H'); c.px(10, 29, 'h')
-    c.rect(4, 32, 13, 33, 'M'); c.rect(9, 33, 10, 33, 'W'); c.rect(6, 33, 7, 33, 'W') if False else None
-    c.rect(9, 36, 11, 36, 's')
+    # head on the left: the FACE (mask, shut eye, mouth) points left, away from the body; the hair/back of the head sits against the body
+    c.rect(4, 30, 13, 37, 'S'); c.rect(4, 29, 13, 31, 'H'); c.rect(10, 30, 13, 36, 'H'); c.px(6, 29, 'h')
+    c.rect(4, 32, 13, 33, 'M'); c.rect(10, 32, 13, 33, 'H'); c.rect(6, 33, 7, 33, 'W')
+    c.rect(5, 36, 7, 36, 's')
     # body under the cape
     c.rect(13, 29, 31, 38, 'R'); c.rect(13, 29, 31, 29, 'p'); c.rect(13, 38, 31, 38, 'r'); c.rect(13, 29, 13, 38, 'r')
     for x in range(14, 31, 3): c.rect(x, 33, x, 38, 'r')                                  # cape folds
@@ -385,10 +397,7 @@ def f_frazzled():
 def f_pull():
     """braced and leaning back, both gloves gripping something out in front (pulling / pushing)"""
     c = Cv()
-    for k, y in enumerate(range(19, 32)):         # cape streaming back
-        t = k / 12
-        for x in range(3 + int(t * 5), 15 - int(t)):
-            c.px(x, y, 'r' if (x == 3 + int(t * 5) or y == 19) else 'R')
+    cape_side(c, 14, 19, 33, 11, lift=0.8, ph=0, slope=0.3, rise=0.85)                # cape streaming back from the shoulders as he leans away
     c.rect(8, 31, 14, 34, 'b'); c.rect(5, 35, 13, 38, 'R'); c.rect(5, 35, 13, 35, 'Y'); c.rect(5, 38, 13, 38, 'r')     # back leg braced far behind
     c.rect(19, 31, 23, 34, 'B'); c.rect(17, 35, 25, 38, 'R'); c.rect(17, 35, 25, 35, 'Y'); c.rect(17, 38, 25, 38, 'r')  # front leg planted
     c.rect(13, 19, 21, 28, 'B'); c.rect(13, 19, 13, 28, 'b'); c.rect(15, 21, 19, 25, 'B')

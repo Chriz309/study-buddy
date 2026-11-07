@@ -95,12 +95,7 @@ def f_pull():
 def f_juggle():
     im = pad(load('cat-front.png'), top=40, side=28)
     d = ImageDraw.Draw(im)
-    for sx, ex in ((-1, 0), (1, 0)):                              # arms straight up, paw pads out
-        x0 = 64 + 28 + sx * 22; y0 = 120 + 40
-        x1 = 64 + 28 + sx * 46; y1 = 70 + 40
-        d.line([(x0, y0), (x1, y1)], fill=GINGER, width=15); d.line([(x0 + sx * 6, y0), (x1 + sx * 3, y1 + 4)], fill=DARK, width=2)
-        d.ellipse([x1 - 11, y1 - 11, x1 + 11, y1 + 11], fill=CREAM, outline=DARK, width=2)
-        d.ellipse([x1 - 4, y1 - 2, x1 + 4, y1 + 5], fill=(240, 150, 150, 255))
+    # no raised arms: the cat stays on all four legs and the icons bounce around its head
     for (x, y, col) in ((38, 8, (255, 90, 106, 255)), (92, 2, (255, 210, 63, 255)), (146, 12, (110, 168, 255, 255))):
         d.ellipse([x, y, x + 20, y + 20], fill=col, outline=(40, 30, 50, 255), width=2); d.ellipse([x + 4, y + 4, x + 8, y + 8], fill=(255, 255, 255, 220))
     return im

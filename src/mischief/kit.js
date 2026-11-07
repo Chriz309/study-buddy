@@ -49,11 +49,6 @@
     const cx = r.x + r.w / 2, cy = r.y + r.h / 2; g.save(); g.fillStyle = '#0a0a0e'; g.beginPath(); g.ellipse(cx, cy, r.w * 0.5 * k, r.h * 0.34 * k, 0, 0, Math.PI * 2); g.fill();
     g.strokeStyle = '#5b5f6b'; g.lineWidth = 3; g.stroke(); g.restore();
   };
-  K.arc = (g, x, y, rad, a, c) => { g.save(); g.globalAlpha = cl(a, 0, 1); g.strokeStyle = c; g.lineWidth = 3; g.beginPath(); g.arc(x, y, rad, -0.9, 0.9); g.stroke(); g.beginPath(); g.arc(x, y, rad * 1.7, -0.7, 0.7); g.stroke(); g.restore(); };
-  K.rod = (g, bx, by, tx, ty, bend) => {
-    g.save(); g.strokeStyle = '#6b3f1d'; g.lineWidth = 4; g.lineCap = 'round'; g.beginPath(); g.moveTo(bx, by); g.quadraticCurveTo((bx + tx) / 2 + bend * 28, (by + ty) / 2 + bend * 28, tx + bend * 18, ty + bend * 30); g.stroke();
-    g.fillStyle = '#c9a15a'; g.fillRect(snap(bx - 3), snap(by - 3), 9, 9); g.restore();
-  };
   K.broom = (g, x, y, dir, ang, S) => {
     g.save(); g.translate(x, y); g.rotate(ang * dir); const L = Math.max(34, S * 0.9);
     g.fillStyle = '#8a5a2b'; g.fillRect(-1.5, -L, 3, L);
@@ -73,24 +68,6 @@
     g.save(); tri(); g.clip(); g.transform(0, -1, -1, 0, D, D); g.drawImage(tg.img, 0, 0, w, h); g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(0, 0, w, h);
     const sh = g.createLinearGradient(0, 0, w, h); sh.addColorStop(0, 'rgba(0,0,0,.25)'); sh.addColorStop(1, 'rgba(255,255,255,.2)'); g.fillStyle = sh; g.fillRect(0, 0, w, h); g.restore();
     g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(Math.min(D, w), D > w ? D - w : 0); g.lineTo(D > h ? D - h : 0, Math.min(D, h)); g.stroke(); g.restore();
-  };
-  K.hammer = (g, x, y, rot) => { g.save(); g.translate(x, y); g.rotate(rot); g.fillStyle = '#7b4a22'; g.fillRect(-2, -4, 5, 22); g.fillStyle = '#9aa3b2'; g.fillRect(-11, -14, 22, 12); g.fillStyle = '#c8d0dc'; g.fillRect(-11, -14, 22, 4); g.restore(); };
-  K.crack = (g, x, y, grow, seed, radius) => {
-    g.save(); g.lineCap = 'round'; g.lineJoin = 'round'; const arms = 9;
-    for (const [c, w] of [['rgba(0,0,0,.45)', 4], ['rgba(255,255,255,.95)', 2]]) {
-      g.strokeStyle = c; g.lineWidth = w; g.beginPath();
-      for (let a = 0; a < arms; a++) { let ang = (a / arms) * 6.283 + hash(seed + a) * 0.5, px = x, py = y, len = radius * (0.35 + 0.65 * hash(seed + a * 3)) * grow; g.moveTo(px, py);
-        const segs = 6; for (let s = 1; s <= segs; s++) { ang += (hash(seed * 7 + a * 11 + s) - 0.5) * 0.9; const d = len / segs; px += Math.cos(ang) * d; py += Math.sin(ang) * d; g.lineTo(px, py);
-          if (s === 3 && hash(seed + a * 2) > 0.4) { g.moveTo(px, py); g.lineTo(px + Math.cos(ang + 0.9) * len * 0.3, py + Math.sin(ang + 0.9) * len * 0.3); g.moveTo(px, py); } } }
-      g.stroke();
-    }
-    g.fillStyle = 'rgba(255,255,255,.55)'; for (let i = 0; i < 3; i++) g.fillRect(x - 3 + (i - 1) * 7, y - 3, 5, 5); g.restore();
-  };
-  K.bandage = (g, x, y, rot, scale, alpha) => {
-    g.save(); g.globalAlpha = cl(alpha, 0, 1); g.translate(x, y); g.rotate(rot); g.scale(scale, scale);
-    g.fillStyle = '#e9b98c'; g.fillRect(-30, -9, 60, 18); g.fillStyle = '#d99f6e'; g.fillRect(-30, 6, 60, 3);
-    g.fillStyle = '#f6dcc0'; g.fillRect(-10, -9, 20, 18); g.fillStyle = '#d9b48b'; for (let i = -6; i <= 6; i += 6) g.fillRect(i - 1, -4, 3, 3), g.fillRect(i - 1, 2, 3, 3);
-    g.strokeStyle = 'rgba(0,0,0,.4)'; g.lineWidth = 1; g.strokeRect(-30, -9, 60, 18); g.restore();
   };
   K.note = (g, x, y, rot, scale, alpha, peel) => {
     g.save(); g.globalAlpha = cl(alpha, 0, 1); g.translate(x, y); g.rotate(rot); g.scale(scale, scale);

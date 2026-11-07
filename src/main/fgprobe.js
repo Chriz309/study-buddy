@@ -2,7 +2,7 @@
 // Windows foreground-window + fullscreen probe.
 //
 // Before: a brand-new PowerShell process was started every 1.5 s, and each one
-// re-compiled the Win32 helper (Add-Type) — roughly 0.3–1 s of CPU every poll,
+// re-compiled the Win32 helper (Add-Type), roughly 0.3–1 s of CPU every poll,
 // which drains laptop batteries.
 // Now: ONE long-lived PowerShell compiles the helper once, then answers each
 // request we write to its stdin. It costs ~nothing between polls and exits by

@@ -13,6 +13,7 @@ const Engine = {
   state:'idle', stateUntil:0, nextDecision:0, lastChange:0, target:null,
   onFloor:false, dragging:false, parachute:false, _chuteRolled:false, _wrapping:false, recent:[], cursor:{x:0,y:0},
   settings:{speed:1,personality:'chill',mischief:25},
+  speakingUntil:0, _talkWalk:false,
   world:{x0:0,y0:0,x1:1280,y1:720,floors:[]}, displays:[], script:null, ledge:null, lastTick:0, _wantClimb:false, _peeking:false, _climbStopY:null,
 
   init(hooks, now){ this.hooks=hooks||{}; this.lastTick=now; this.lastChange=now; },
@@ -47,6 +48,9 @@ const Engine = {
   _pick(w){ const keys=Object.keys(w); let sum=keys.reduce((a,k)=>a+Math.max(0,w[k]),0), r=Math.random()*sum, ch='idle';
     for(const k of keys){ r-=Math.max(0,w[k]); if(r<=0){ch=k;break;} } return ch; },
   setCursor(p){ this.cursor=p; },
+  // A speech line is on screen: the pet stops (walk / float drift / climb) until it is done, then carries on. Falls, throws, drags and scripts are not held.
+  holdForSpeech(now,ms){ const d=Math.max(0,Math.min(6000,+ms||0)); this.speakingUntil=Math.max(this.speakingUntil,now+d); },
+  isSpeaking(now){ return (now==null?this._now:now) < this.speakingUntil; },
   setLedge(seg){ this.ledge=seg||null; },
   onLedge(){ const L=this.ledge; if(!L||!this.onFloor) return false; const cx=this.pos.x+this.size/2; return cx>=L.x0&&cx<=L.x1&&Math.abs(this.pos.y-(L.y-this.size))<3; },
   floorAt(x){ const cx=x+this.size/2; let best=null;
@@ -70,7 +74,7 @@ const Engine = {
     this.onFloor=false; this.vel.x=clamp(this.vel.x,-1400,1400); this.vel.y=clamp(this.vel.y,-1400,1400); this.setState('fall',1e9);
     if(Math.hypot(this.vel.x,this.vel.y)>950) this.hooks.event&&this.hooks.event('dizzy');
     this._maybeParachute(); this._chuteRolled=true; },   // one roll per throw (don't also roll the self-fall chance)
-  _maybeParachute(){ if(this.gait==='step') return;   // cats land on their feet — no parachute
+  _maybeParachute(){ if(this.gait==='step') return;   // cats land on their feet, no parachute
     const drop=this.floorAt(this.pos.x)-this.pos.y; if(!this.parachute && drop>150 && Math.random()<0.4){ this.parachute=true; if(this.vel.y>120)this.vel.y=120; this.hooks.event&&this.hooks.event('parachuteOpen'); } },
   petted(){ this.hooks.event&&this.hooks.event('pet'); },
   nap(){ this.setState('sleep',rnd(7000,15000)); this.hooks.event&&this.hooks.event('say',{kind:'sleep'}); },
@@ -125,7 +129,7 @@ const Engine = {
 
   tick(now){ const dt=Math.min(0.05,(now-this.lastTick)/1000); this.lastTick=now; this._now=now;
     if(!this.dragging){ if(this.script) this._runScript(dt,now); else this.step(dt,now); }
-    if(!this.dragging&&!this.script&&this.state!=='sleep'&&this.state!=='drag'&&this.state!=='climb'&&now-this.lastChange>7000){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
+    if(!this.dragging&&!this.script&&this.state!=='sleep'&&this.state!=='drag'&&this.state!=='climb'&&now-this.lastChange>7000&&!this.isSpeaking(now)){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
     if(!this.dragging&&!this.script&&this.moveType!=='float'&&!this._wrapping) this._pullOntoScreens();
     // never let a non-finite position escape the tick (belt-and-braces; e.g. a
     // stray NaN from the floating/cursor-avoid math would crash the window move)
@@ -139,6 +143,10 @@ const Engine = {
     const spd=this.baseSpeed*(this.settings.speed||1)*(this.settings.personality==='hyper'?1.5:this.settings.personality==='sleepy'?.6:1);
     const x0=this.world.x0,x1=this.world.x1;
     const climbing=this._wantClimb&&Math.abs(this.pos.x-(this.climbEdge==null?-1e9:this.climbEdge))<2;
+    const talking=this.isSpeaking(now);
+    if(!talking&&this._talkWalk){ this._talkWalk=false; if(this.target!=null&&this.state==='idle'&&this.onFloor) this.setState('walk',1e9); }   // line finished: pick the walk back up
+    if(talking&&climbing) return;                                  // hang on the wall while the line shows
+    if(talking&&this.state==='walk'&&this.onFloor){ this._talkWalk=true; this.setState('idle',0); }   // stop and talk (the target is kept)
     if(climbing){ if(this.state!=='climb') this.setState('climb',1e9); this.pos.y-=spd*1.3*dt; this.facing=this.climbEdge===x0?1:-1;
       if(this._climbStopY!=null && this.pos.y<=this._climbStopY){ // reached the window top -> perch
         this.pos.y=this._climbStopY; this._wantClimb=false; this._climbStopY=null; this.onFloor=true; this.vel.y=0; this.setState('idle',rnd(800,1800)); return; }
@@ -168,18 +176,19 @@ const Engine = {
         if(this.vel.y>120) this.hooks.event&&this.hooks.event('land',{vy:this.vel.y}); this._nextHop=now+rnd(90,240); if(this.state==='fall') this.setState('idle',400); }
       this.pos.y=fy; this.vel.y=0; this.onFloor=true; this._chuteRolled=false; }
     this.pos.x=clamp(this.pos.x,x0,x1-this.size);
-    if(now>this.nextDecision&&this.onFloor&&!this._wantClimb&&['idle','sit','walk'].includes(this.state)&&(this.state!=='walk'||this.target==null)) this.decide();
+    if(now>this.nextDecision&&!talking&&this.onFloor&&!this._wantClimb&&['idle','sit','walk'].includes(this.state)&&(this.state!=='walk'||this.target==null)) this.decide();
     if(this.state==='sleep'&&now>this.stateUntil) this.setState('idle',300); },
   // --- floating creatures (ghost): drift freely, no gravity/hops/climb ---
   stepFloat(dt,now){ const W0=this.world.x0,W1=this.world.x1,H0=this.world.y0,H1=this.world.y1;
     if(this.state==='drag'){ return; }
+    if(this.isSpeaking(now)&&!this._wrapping) return;                // hover still while a line shows (a wall-dash in flight is not interrupted)
     if(this.state!=='sleep'){
       if(!this.target||typeof this.target!=='object') this.target = this.settings.stayPut
         ? {x:this.pos.x+this.size/2, y:this.pos.y+this.size/2} : this._floatPoint();
       const slow=this._wrapping?1.05:0.6;                              // ghost drifts gently (was too fast)
       const tx=this.target.x-this.size/2, ty=this.target.y-this.size/2, e=Math.min(1,dt*slow*(this.settings.speed||1));
       this.pos.x+=(tx-this.pos.x)*e; this.pos.y+=(ty-this.pos.y)*e;
-      // shy away from the cursor — but NOT when told to stay put
+      // shy away from the cursor, but NOT when told to stay put
       if(!this.settings.stayPut && this.cursor&&isFinite(this.cursor.x)){ const cx=this.pos.x+this.size/2, cy=this.pos.y+this.size/2;
         const dx=cx-this.cursor.x, dy=cy-this.cursor.y, d=Math.hypot(dx,dy), R=175+this.size*0.6;
         if(d<R && d>0.1){ const push=(1-d/R)*300*dt; this.pos.x+=dx/d*push; this.pos.y+=dy/d*push;
@@ -241,7 +250,7 @@ const Engine = {
     this.nextDecision=Math.max(this.nextDecision||0,(this._now||0)+2500);                    // hold the random brain while the caller waits for the landing
     return true; },
   canStartScript(air){ return !this.script && !this.dragging && (this.onFloor || (air === true && this.moveType === 'float')) && !this.settings.stayPut && !this.parachute
-    && (this.state==='idle'||this.state==='sit') && !this.onLedge() && this.displays.length>0; },
+    && (this.state==='idle'||this.state==='sit') && !this.isSpeaking() && !this.onLedge() && this.displays.length>0; },
   currentDisplay(){ const d=geo.displayForSprite(this.pos,this.size,this.displays)||this.displays[0]; return d?{x0:d.workArea.x,x1:d.workArea.x+d.workArea.width,y0:d.workArea.y,y1:d.workArea.y+d.workArea.height}:{x0:this.world.x0,x1:this.world.x1,y0:this.world.y0,y1:this.world.y1}; },
   startScript(s,now){ if(!this.canStartScript(s.allowAir === true)) return false;
     this.script=s; this._scriptAt=now==null?this._now:now; this.target=null; this._wantClimb=this._peeking=false; this.vel.x=0; this.vel.y=0;

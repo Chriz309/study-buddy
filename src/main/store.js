@@ -2,11 +2,11 @@
 //
 // Crash-safe saving:
 //  • Writes go to buddy-save.json.tmp, are flushed to disk, then swapped in with a
-//    rename — so a crash / power cut mid-write can never leave a half-written save.
+//    rename, so a crash / power cut mid-write can never leave a half-written save.
 //  • buddy-save.json.bak keeps a recent known-good copy (refreshed every few minutes).
 //  • If the save is ever unreadable, it's kept aside as buddy-save.corrupt-<time>.json
 //    and the backup is loaded instead of silently resetting the student to zero.
-//  • saveNow() writes immediately — used on quit, shutdown, sleep and before updates
+//  • saveNow() writes immediately, used on quit, shutdown, sleep and before updates
 //    (the old 300 ms delayed save meant the last changes were lost when quitting).
 const { app } = require('electron');
 const fs = require('fs');

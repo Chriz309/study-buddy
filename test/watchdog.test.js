@@ -7,8 +7,12 @@ const { LAYOUTS } = require('./helpers');
 const base = () => ({ hasWindow: true, userHidden: false, shown: true, winBounds: { x: 10, y: 10, width: 240, height: 245 }, wantBounds: { x: 10, y: 10, width: 240, height: 245 },
   dragging: false, dragPingAge: 0, dragAge: 0, scripted: false, wrapping: false, pos: { x: 500, y: 900 }, size: 100, displays: LAYOUTS.dual });
 
-test('healthy sprite: only the cheap re-assertions', () => {
-  assert.deepEqual(assess(base()), ['reassertMouse', 'reassertTop']);
+test('healthy sprite: only the topmost re-assertion (never the mouse style: that flickered the cursor)', () => {
+  assert.deepEqual(assess(base()), ['reassertTop']);
+});
+test('a drifted window gets its bounds AND its mouse style re-applied', () => {
+  const a = assess({ ...base(), winBounds: { x: 400, y: 10, width: 240, height: 245 } });
+  assert.deepEqual(a.filter(x => x === 'fixBounds' || x === 'reassertMouse'), ['fixBounds', 'reassertMouse']);
 });
 test('missing window is recreated unless the user hid the buddy', () => {
   assert.deepEqual(assess({ ...base(), hasWindow: false }), ['recreateWindow']);

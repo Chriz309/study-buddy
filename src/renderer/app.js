@@ -22,7 +22,7 @@
 Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated desktop-mischief cat frames
   let WALK=['side','side2','side3','side4'];
   const HERO_H=1.25;   // the 40px canvas has margins: draw it 1.25x so the figure is as tall as the size setting
-  // cat coat colours (the orange art recoloured via filters) — hue-rotate looked broken on it
+  // cat coat colours (the orange art recoloured via filters), hue-rotate looked broken on it
   const CAT_COLORS={ ginger:'', grey:'grayscale(1) brightness(1.02)', black:'grayscale(1) brightness(.42) contrast(1.15)', white:'grayscale(1) brightness(1.72) contrast(.82)' };
   let lastRot=0, lastClip=null, tintOn=false, xrayT=0, smokeT=0;
   let dpr=Math.max(1,window.devicePixelRatio||1);
@@ -35,7 +35,7 @@ Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated
   let disp={x:0,y:0}, lastState='idle', dragging=false, speechTimer=0, zzzTimer=0, idleAcc=0, lastSize=0;
 
   function resizeCanvas(){ dpr=Math.max(1,window.devicePixelRatio||1); glc.width=Math.round(innerWidth*dpr); glc.height=Math.round(innerHeight*dpr); }
-  // crossing to a monitor with a different scale fires 'resize' AND changes dpr —
+  // crossing to a monitor with a different scale fires 'resize' AND changes dpr,
   // re-apply the mesh + face sizing so body and face stay aligned.
   window.addEventListener('resize', ()=>{ resizeCanvas(); if(ready) applySize(); });
   resizeCanvas();
@@ -63,7 +63,7 @@ Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated
   function setPose(key){ const cfg=CHARS[curChar]; if(!cfg||!cfg.poses) return;
     const im=poseImgs[curChar+'/'+key]; if(!im || curPose===key) return;
     curPose=key; heightScale=curChar==='hero'?HERO_H:(POSE_H[key]||1); jelly.aspect=im.width/im.height; jelly.load(im); jelly.wave=false; applySize(); applyColor(); applyFacing(); ready=true; }
-  // lightweight texture swap (same-size walk frames) — keeps the soft-body jiggle
+  // lightweight texture swap (same-size walk frames), keeps the soft-body jiggle
   function swapTex(key){ const im=poseImgs[curChar+'/'+key]; if(!im||curPose===key) return; curPose=key; jelly.aspect=im.width/im.height; jelly.load(im); }
   // quick eye-blink: flick to the closed-eye variant of the current pose, then back
   function doBlink(){ const base=curPose, bk=base+'_blink'; if(!poseImgs[curChar+'/'+bk]) return;
@@ -97,7 +97,9 @@ Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated
     if(!force&&(kind==='idle'||kind==='study')&&Math.random()>chatter) return;
     speechEl.textContent=linePicker.pick(curChar, kind, new Date().getHours());
     speechEl.classList.add('show'); face.talk(Math.min(1.6,0.5+speechEl.textContent.length*0.045));
-    clearTimeout(speechTimer); speechTimer=setTimeout(()=>speechEl.classList.remove('show'),2400+Math.random()*1200); }
+    const showMs=2400+Math.random()*1200;
+    clearTimeout(speechTimer); speechTimer=setTimeout(()=>speechEl.classList.remove('show'),showMs);
+    try{ window.buddy.petSpeaking(Math.round(showMs+250)); }catch{} }   // tell main: stand still until the line is gone (the text stays readable)
 
   function spawn(txt,cls,x,y){ const el=document.createElement('div'); el.className=cls; el.textContent=txt; el.style.left=x+'px'; el.style.top=y+'px'; fx.appendChild(el); setTimeout(()=>el.remove(),1900); }
   function petScreenCss(){ return {x:pet.x+pet.size/2, y:pet.y+pet.size*0.2}; }
@@ -208,8 +210,9 @@ Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated
     if(!pet.show){ if(!cleared){ jelly.clear(); cleared=true; } return; }
     cleared=false;
     // GPU/CPU saver: while resting (sleeping / sitting / idle, nothing popping up) draw at
-    // ~20fps instead of 60 — the breathing/blink motions are slow, so it looks the same.
-    const calm=now>boostUntil && (pet.state==='sleep'||pet.state==='sit'||pet.state==='idle') && !foodOn && !chuteOn && !speechEl.classList.contains('show') && !blinking;
+    // ~20fps instead of 60, the breathing/blink motions are slow, so it looks the same.
+    // (floaters never rest: the ghost's bob + swirl must run at full rate or it looks choppy)
+    const calm=!floatMode && now>boostUntil && (pet.state==='sleep'||pet.state==='sit'||pet.state==='idle') && !foodOn && !chuteOn && !speechEl.classList.contains('show') && !blinking;
     if(calm){ calmAcc+=dt; if(calmAcc<0.048){ return; } dt=calmAcc; }
     calmAcc=0; dt=Math.min(0.05,dt);
     if(['idle','sit'].includes(pet.state)){ idleAcc+=dt; if(idleAcc>2.4){ idleAcc=0; if(!(settings&&settings.reduceMotion)) jelly.squash(.08); } }
@@ -233,9 +236,12 @@ Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated
     }
     if(vectorFace){ face.idle(dt); face.step(dt); } jelly.step(dt);
     const bob=floatMode?Math.sin(now/650)*pet.size*0.05:0;
-    jelly.setOrigin((pet.x+pet.size/2)*dpr, (pet.y+pet.size+bob)*dpr);
+    // main moves the window in whole pixels; it sends the sub-pixel remainder (fx, fy) so the sprite glides instead of stepping
+    const sx=pet.fx||0, sy=pet.fy||0;
+    jelly.setOrigin((pet.x+sx+pet.size/2)*dpr, (pet.y+sy+pet.size+bob)*dpr);
     jelly.draw(); if(vectorFace && jelly._placed) face.follow(jelly.getBounds());
-    if(speechEl.classList.contains('show')){ const b=jelly.getBounds(); speechEl.style.left=((b.minx+b.maxx)/2/dpr)+'px'; speechEl.style.top=(b.miny/dpr-8)+'px'; }
+    // the line sits at a fixed spot over the resting sprite (not tied to the wobbling jelly bounds) so it never shakes
+    if(speechEl.classList.contains('show')){ speechEl.style.left=Math.round(pet.x+pet.size/2)+'px'; speechEl.style.top=Math.round(pet.y+pet.size-heightScale*pet.size-12)+'px'; }
     if(chuteOn){ const cw=pet.size*1.35, chh=cw*1.081, sway=Math.sin(now/420)*7;
       chute.style.width=cw+'px'; chute.style.left=(pet.x+pet.size/2-cw/2+sway)+'px'; chute.style.top=(pet.y-chh+pet.size*0.18)+'px'; }
     if(foodOn){ foodT+=dt; const dur=0.62, p=Math.min(1,foodT/dur), fw=pet.size*0.5;
@@ -248,8 +254,9 @@ Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated
   requestAnimationFrame(frame);
 
   // ---- input (this window is interactive only when the cursor is over the pet) ----
+  const PAD_MIN=14, PAD_K=0.28;   // hit margin round the sprite (keep in step with main.js hitPad)
   let dragId=null,lastPt=null,moved=false,downAt=0;
-  function overPet(x,y){ const pad=Math.max(18, pet.size*0.5); return pet.show && x>=pet.x-pad && x<=pet.x+pet.size+pad && y>=pet.y-pad && y<=pet.y+pet.size+pad; }
+  function overPet(x,y){ const pad=Math.max(PAD_MIN, pet.size*PAD_K); return pet.show && x>=pet.x-pad && x<=pet.x+pet.size+pad && y>=pet.y-pad && y<=pet.y+pet.size+pad; }
   window.addEventListener('pointerdown',(e)=>{ if(e.button===2) return; if(!overPet(e.clientX,e.clientY)) return;
     dragId=e.pointerId; moved=false; downAt=Date.now(); lastPt={x:e.clientX,y:e.clientY};
     try{glc.setPointerCapture(e.pointerId);}catch{} e.preventDefault(); });

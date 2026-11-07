@@ -12,13 +12,13 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 #fx { position: fixed; inset: 0; pointer-events: none; z-index: 14; }
 #chute { position: absolute; left: 0; top: 0; z-index: 13; display: none; pointer-events: none; will-change: left, top, width; filter: drop-shadow(0 4px 5px rgba(0,0,0,.2)); }
 #food { position: absolute; left: 0; top: 0; z-index: 12; display: none; pointer-events: none; will-change: left, top, width; filter: drop-shadow(0 3px 4px rgba(0,0,0,.25)); }
+/* Chatter: no bubble. Same face as the special-animation pop-ups (bold Courier New, yellow fill, dark outline) so it reads on light and dark backgrounds. */
 #speech { position: absolute; left: 0; top: 0; z-index: 15; pointer-events: none;
-          background: #fff; color: #20263b; font-size: 13px; font-weight: 600; line-height: 1.25;
-          padding: 8px 11px; border-radius: 13px; width: max-content; max-width: 220px; text-align: center;
-          box-shadow: 0 6px 18px rgba(0,0,0,.22); border: 2px solid #ffd23f; transform: translate(-50%,-100%);
+          font-family: "Courier New", monospace; font-weight: 900; font-size: 15px; line-height: 1.2; letter-spacing: .2px;
+          color: #ffe14d; width: max-content; max-width: 230px; text-align: center; transform: translate(-50%,-100%);
+          text-shadow: -2px 0 0 #3b1700, 2px 0 0 #3b1700, 0 -2px 0 #3b1700, 0 2px 0 #3b1700, -1.5px -1.5px 0 #3b1700, 1.5px -1.5px 0 #3b1700, -1.5px 1.5px 0 #3b1700, 1.5px 1.5px 0 #3b1700, 0 3px 4px rgba(0,0,0,.55);
           opacity: 0; transition: opacity .18s ease; }
 #speech.show { opacity: 1; }
-#speech::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 7px solid transparent; border-top-color: #fff; }
 .heart { position: absolute; font-size: 22px; pointer-events: none; animation: rise 1s ease-out forwards; }
 @keyframes rise { 0% { opacity: 1; transform: translateY(0) scale(.6);} 100% { opacity: 0; transform: translateY(-48px) scale(1.2);} }
 .zzz { position: absolute; font-size: 18px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.4); pointer-events: none; animation: zfloat 1.9s ease-out forwards; font-weight: 800; }

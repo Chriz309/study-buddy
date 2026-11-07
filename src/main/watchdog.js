@@ -18,11 +18,13 @@ function assess(f) {
   if (f.dragging && f.dragPingAge > DRAG_PING_TIMEOUT && f.dragAge > DRAG_PING_TIMEOUT) out.push('releaseDrag');
   // off-screen sprite (scripted leaps and the ghost's wall-dash are allowed to leave briefly)
   if (!f.dragging && !f.scripted && !f.wrapping && geo.visibleFraction(f.pos, f.size, f.displays) < MIN_VISIBLE) out.push('rescue');
-  // the real window drifted from where the engine thinks it is (failed setBounds, DPI bounce)
+  // the real window drifted from where the engine thinks it is (failed setBounds, DPI bounce). A bounce like that is exactly
+  // when Windows drops the click-through style, so re-assert the mouse style then (and only then: re-applying it on every
+  // watchdog pass re-installed the mouse hook and made the cursor flicker).
   if (f.winBounds && f.wantBounds && (Math.abs(f.winBounds.x - f.wantBounds.x) > BOUNDS_SLOP || Math.abs(f.winBounds.y - f.wantBounds.y) > BOUNDS_SLOP
-      || Math.abs(f.winBounds.width - f.wantBounds.width) > BOUNDS_SLOP || Math.abs(f.winBounds.height - f.wantBounds.height) > BOUNDS_SLOP)) out.push('fixBounds');
-  // always: re-assert the OS-level click-through style and topmost level (cheap, idempotent)
-  out.push('reassertMouse', 'reassertTop');
+      || Math.abs(f.winBounds.width - f.wantBounds.width) > BOUNDS_SLOP || Math.abs(f.winBounds.height - f.wantBounds.height) > BOUNDS_SLOP)) out.push('fixBounds', 'reassertMouse');
+  // topmost can be lost silently with no visible symptom: cheap and harmless to re-assert (main.js throttles the real calls)
+  out.push('reassertTop');
   return out;
 }
 

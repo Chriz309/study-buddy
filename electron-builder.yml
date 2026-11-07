@@ -11,7 +11,7 @@ files:
   - "assets/**/*"
   - "package.json"
 
-# Auto-update feed — GitHub Releases. Set owner/repo to your repository.
+# Auto-update feed, GitHub Releases. Set owner/repo to your repository.
 publish:
   provider: github
   owner: Chriz309
@@ -37,7 +37,7 @@ afterPack: scripts/mac-adhoc-sign.js   # no-op except on macOS
 mac:
   icon: assets/icon.png          # 1024x1024 (macOS needs >= 512)
   category: public.app-category.entertainment
-  identity: null                 # no Apple Developer ID — ad-hoc signed in afterPack
+  identity: null                 # no Apple Developer ID, ad-hoc signed in afterPack
   hardenedRuntime: false
   gatekeeperAssess: false
   # Separate builds: arm64 = Apple Silicon (M1/M2/M3/M4), x64 = older Intel Macs

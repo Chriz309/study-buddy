@@ -70,9 +70,16 @@ test('buildModel: shell windows, minimised windows and unknown apps are not usab
   for (const p of ['KeePass', 'Code', 'cmd', 'outlook', '']) assert.ok(!L.appAllowed(p), p);
 });
 
-test('desktopRows needs 4+ icons on a row; groupLines merges fragments of one line and drops junk', () => {
+test('desktopRows / desktopCols need 3+ icons on a line; groupLines merges fragments of one line and drops junk', () => {
   const icons = [0, 1, 2, 3, 4].map(i => L.R(20 + i * 90, 40, 75, 90)).concat([L.R(20, 300, 75, 90)]);
   assert.equal(L.desktopRows(icons).length, 1); assert.equal(L.desktopRows(icons)[0].length, 5);
+  assert.equal(L.desktopRows(icons.slice(0, 2)).length, 0, 'two icons are not a row'); assert.equal(L.desktopRows(icons.slice(0, 3)).length, 1, 'three are');
+  // what Windows actually does: one or two columns down the left edge
+  const col = [0, 1, 2, 3, 4, 5].map(i => L.R(10, 10 + i * 100, 75, 90)).concat([L.R(110, 10, 75, 90), L.R(110, 110, 75, 90)]);
+  assert.equal(L.desktopRows(col).length, 0, 'no horizontal run on a column layout'); assert.equal(L.desktopCols(col).length, 1); assert.equal(L.desktopCols(col)[0].length, 6);
+  assert.deepEqual(L.desktopCols(col)[0].map(r => r.y), [10, 110, 210, 310, 410, 510], 'sorted top to bottom');
+  const raw = { ...RAW, desk: col.map(r => [r.x, r.y, r.w, r.h]) }, m = L.buildModel(raw, conv, [D1]); assert.equal(m.cols.length, 1); assert.equal(m.rows.length, 0); assert.equal(m.desktop.length, 8);
+  assert.deepEqual(L.buildModel(null, conv, [D1]).cols, []);
   const lines = L.groupLines([L.R(100, 200, 300, 20), L.R(405, 201, 80, 20), L.R(100, 230, 400, 20), L.R(100, 260, 3, 20), L.R(100, 290, 400, 200)]);
   assert.equal(lines.length, 2); assert.equal(lines[0].w, 385);
 });
@@ -135,6 +142,11 @@ test('abortReason: caret / selection / first-line change counts as typing (text 
   assert.equal(L.abortReason({ ...AB, caret0: sig, caret: { ...sig, c: L.R(1, 1, 1, 1) } }), null, 'ignored outside text mode');
 });
 
+test('candidates: a gag can boost itself when its opportunity is rare (icons visible), and a throwing boost is ignored', () => {
+  const g = { a: { weight: 1, find: () => ({}) }, b: { weight: 1, boost: () => 6, find: () => ({}) }, c: { weight: 1, boost: () => { throw new Error('x'); }, find: () => ({}) } };
+  let b = 0; for (let s = 1; s <= 300; s++) if (L.candidates(g, {}, {}, [], rng(s))[0].id === 'b') b++;
+  assert.ok(b > 150, 'boosted gag goes first most of the time: ' + b); assert.equal(L.candidates(g, {}, {}, [], rng(1)).length, 3);
+});
 test('candidates: weighted, skips targets that are missing, de-prioritises recent, honours only', () => {
   const g = { a: { weight: 1, find: () => ({ x: 1 }) }, b: { weight: 1, find: () => null }, c: { weight: 1, find: () => { throw new Error('x'); } }, d: { weight: 1, find: () => ({ y: 1 }) } };
   assert.deepEqual(L.candidates(g, {}, {}, [], rng(1)).map(c => c.id).sort(), ['a', 'd']);

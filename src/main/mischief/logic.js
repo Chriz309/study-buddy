@@ -43,7 +43,7 @@ const appAllowed = (proc) => ALLOWED_APPS.has(String(proc || '').toLowerCase());
 
 // raw = parsed probe scan (physical px). conv = physical rect -> DIP rect. Returns a model of DIP rects, or only what is usable.
 function buildModel(raw, conv, displays) {
-  const m = { bar: null, start: null, buttons: [], wifi: null, volume: null, battery: null, clock: null, desktop: [], rows: [], win: null };
+  const m = { bar: null, start: null, buttons: [], wifi: null, volume: null, battery: null, clock: null, desktop: [], rows: [], cols: [], win: null };
   if (!raw) return m;
   const cv = (a) => { const r = fromArr(a); return r ? conv(r) : null; };
   const bar = cv(raw.bar);
@@ -69,7 +69,7 @@ function buildModel(raw, conv, displays) {
     if (main.length >= 4) { m.wifi = m.wifi || main[0]; m.volume = m.volume || main[1]; m.battery = m.battery || main[2]; }
   }
   m.desktop = (raw.desk || []).map(cv).filter(Boolean);
-  m.rows = desktopRows(m.desktop);
+  m.rows = desktopRows(m.desktop); m.cols = desktopCols(m.desktop);
   const fg = raw.fg;
   if (fg && fg.r && !fg.i && !SHELL.has(fg.c)) {
     const r = cv(fg.r), d = r && displayAt(displays, center(r));
@@ -77,15 +77,18 @@ function buildModel(raw, conv, displays) {
   }
   return m;
 }
-// groups desktop icons that share a row (same top within tolerance) and are roughly evenly spaced: >=4 per row
-function desktopRows(icons) {
-  const rows = [];
-  for (const r of [...icons].sort((a, b) => a.y - b.y || a.x - b.x)) {
-    const row = rows.find(q => Math.abs(q[0].y - r.y) <= 6);
-    if (row) row.push(r); else rows.push([r]);
+// Desktop icons: Windows lays them out in COLUMNS (top to bottom, then the next column), so a horizontal run is rare and a vertical one is the norm.
+// A run = 3+ icons that share a row (same top within tolerance) or a column (same left), sorted along the line (longest run first).
+const RUN_MIN = 3;
+function runsOf(icons, same, along) {
+  const lines = [];
+  for (const r of [...icons].sort((a, b) => along(a) - along(b))) {
+    const l = lines.find(q => same(q[0], r)); if (l) l.push(r); else lines.push([r]);
   }
-  return rows.map(q => q.sort((a, b) => a.x - b.x)).filter(q => q.length >= 4);
+  return lines.map(q => q.sort((a, b) => along(a) - along(b))).filter(q => q.length >= RUN_MIN).sort((a, b) => b.length - a.length);
 }
+const desktopRows = (icons) => runsOf(icons, (a, b) => Math.abs(a.y - b.y) <= 6, (r) => r.x * 1e4 + r.y).map(q => q.sort((a, b) => a.x - b.x));
+const desktopCols = (icons) => runsOf(icons, (a, b) => Math.abs(a.x - b.x) <= 6, (r) => r.y * 1e4 + r.x).map(q => q.sort((a, b) => a.y - b.y));
 // consecutive text-line fragments on the same line merge to one rect; tiny/huge fragments drop out
 function groupLines(rects) {
   const lines = [];
@@ -166,7 +169,8 @@ function candidates(gags, model, env, recent, R_ = Math.random, only) {
     const g = gags[id]; let t = null;
     try { t = g.find(model, env); } catch { t = null; }
     if (!t) continue;
-    const w = (g.weight || 1) * (recent && recent.includes(id) ? 0.15 : 1);
+    let boost = 1; try { if (g.boost) boost = Math.max(0.1, +g.boost(model) || 1); } catch { boost = 1; }
+    const w = (g.weight || 1) * boost * (recent && recent.includes(id) ? 0.15 : 1);
     out.push({ id, targets: t, key: -Math.log(1 - R_()) / w });   // weighted random order (exponential race)
   }
   return out.sort((a, b) => a.key - b.key);
@@ -182,7 +186,7 @@ function overlayBox(area, bounds, margin = 160) {
 }
 
 module.exports = { FIRST_CHAOS_MS, overlayBox, R, fromArr, right, bottom, center, inflate, intersects, containsPt, union, distToRect, sameRect, within, physToDip, cropFor, displayAt, layoutKey,
-  ALLOWED_APPS, appAllowed, buildModel, desktopRows, groupLines, FREQ, nextDelay, createActivity, blockedReason, CAP_MS, abortReason, sameSig, candidates };
+  ALLOWED_APPS, appAllowed, buildModel, desktopRows, desktopCols, RUN_MIN, groupLines, FREQ, nextDelay, createActivity, blockedReason, CAP_MS, abortReason, sameSig, candidates };
 
 // Dev restore check: compares the same screen areas before and after a prank (bitmaps of a whole display, physical pixels).
 // Returns mean absolute channel difference (0..1), percent of pixels that differ by more than 24/255 in any channel, and the largest channel difference.

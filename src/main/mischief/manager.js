@@ -74,12 +74,16 @@ function createManager(d) {
 
   const hold = () => { if (d.holdBrain) d.holdBrain(6000); };   // re-armed at every step of the preparation: the random brain must not walk the sprite off
   // checked right before the capture and again right before the overlay opens: stop(), settings, lock, suspend, fullscreen, grab, a sprite that moved
-  function gate(env) {
+  function prepWhy() {   // everything that must stop the preparation, whether the sprite is standing, walking in or about to be captured
     const f = d.flags(), e = d.engine; hold();
     if (prepAbort) return prepAbort;
     if (!forced && !settings().enabled) return 'disabled';
     if (f.locked) return 'session-locked'; if (f.suspended) return 'suspended'; if (f.fullscreen) return 'fullscreen'; if (f.userHidden || !f.petShown) return 'hidden';
     if (e.dragging) return 'sprite-grabbed';
+    return null;
+  }
+  function gate(env) {
+    const e = d.engine, w = prepWhy(); if (w) return w;
     if (!e.canStartScript(true)) return 'sprite-busy';
     if (Math.abs(e.pos.x - env.sx) > 6 || Math.abs(e.pos.y - env.sy) > 6) return 'sprite-moved';
     return null;
@@ -149,6 +153,41 @@ function createManager(d) {
     return lines.length > 0;
   }
 
+  // Walk-in: the sprite goes to the gag's start spot with its normal pace (a walker walks along the floor at its walking speed, the ghost drifts gently),
+  // BEFORE any capture or overlay, so the prank never starts with the sprite flying across the screen. Cancellable like the rest of the preparation.
+  const GHOST_PACE = 0.62;
+  async function walkIn(appr, env) {
+    const e = d.engine, ghost = env.char === 'ghost';
+    const pace = e.baseSpeed * (e.settings.speed || 1) * (e.settings.personality === 'hyper' ? 1.5 : e.settings.personality === 'sleepy' ? 0.6 : 1) * 1.6 * (ghost ? GHOST_PACE : 1);
+    const tx = appr.x, ty = ghost ? appr.y : e.pos.y, dist = Math.hypot(tx - e.pos.x, ty - e.pos.y);
+    if (dist < 6) return null;
+    let fin = null, done = false;
+    const maxMs = dist / Math.max(30, pace) * 1000 + 3000;
+    const script = {
+      name: 'mischief-walkin', maxMs, allowAir: true,
+      init() {},
+      update(en, dt) {
+        const dx = tx - en.pos.x, dy = ty - en.pos.y, rem = Math.hypot(dx, dy), step = Math.min(rem, pace * dt);
+        if (rem > 0.01) { en.pos.x += dx / rem * step; en.pos.y += dy / rem * step; if (Math.abs(dx) > 0.5) en.facing = dx < 0 ? -1 : 1; }
+        en.setState(ghost ? 'idle' : 'walk', 1e9);
+        return rem - step < 0.5;
+      },
+      cancel(en, why) { done = true; fin = why; },
+    };
+    if (!e.startScript(script, d.now())) return 'sprite-busy';
+    const t0 = d.now();
+    while (!done) {
+      await d.sleep(40);
+      const why = prepWhy();
+      if (why) { if (e.script === script) e.cancelScript('mischief-prep'); return why; }
+      if (d.now() - t0 > maxMs + 4000) { if (e.script === script) e.cancelScript('mischief-prep'); return 'approach-timeout'; }
+    }
+    if (fin !== 'done') return fin === 'drag' ? 'sprite-grabbed' : 'sprite-' + fin;
+    e.pos.x = tx; if (!ghost) e.pos.y = ty;
+    for (let i = 0; i < 25 && !e.canStartScript(true); i++) { await d.sleep(40); const why = prepWhy(); if (why) return why; }   // lands on the floor and comes to rest
+    return null;
+  }
+
   async function play(id, targets, env, probe, scan, model, displays) {
     const gag = G[id], e = d.engine, rects = {};
     for (const k of Object.keys(targets)) { const r = targets[k]; if (r && typeof r.w === 'number') rects[k] = r; }
@@ -165,7 +204,14 @@ function createManager(d) {
         env = makeEnv(displays); if (!env) return { status: 'skipped', id, reason: 'sprite-offscreen' };
         if (env.display.id !== td.id) return { status: 'skipped', id, reason: 'other-display' };
       } }
-    const plan = gag.plan(targets, env);
+    let plan = gag.plan(targets, env);
+    if (plan.appr && logic.abortReason({ now: d.now(), startedAt: d.now(), cursor: d.cursor(), near: Object.values(plan.tg), zones: [] })) return { status: 'skipped', id, reason: 'cursor-near-target' };   // no point walking over there
+    // walk to the start spot at a natural pace first (plan.appr), then plan again from where the sprite now stands
+    if (plan.appr && plan.appr.ms > 400) {
+      const why = await walkIn(plan.appr, env); if (why) return { status: 'skipped', id, reason: why };
+      env = makeEnv(displays); if (!env) return { status: 'skipped', id, reason: 'sprite-offscreen' };
+      plan = gag.plan(targets, env);
+    }
     const first = Object.values(plan.tg)[0] || plan.area, disp = logic.displayAt(displays, logic.center(first));
     if (!disp || disp.id !== env.display.id) return { status: 'skipped', id, reason: disp ? 'other-display' : 'target-offscreen' };
     const zones = zonesOf(plan, env.S), near = Object.values(plan.tg), textMode = id === 'text';

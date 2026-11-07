@@ -4,11 +4,11 @@
 
 const CURRENCY = { name: 'Sparks', symbol: '⚡' }; // ⚡
 // DEV-ONLY testing tools (bonus Sparks + sell buddy). MUST be false for public
-// releases — set to false in the commit that merges dev -> main. (search: DEV_TOOLS)
+// releases, set to false in the commit that merges dev -> main. (search: DEV_TOOLS)
 const DEV_TOOLS = false;
 // Cost of one gumball-machine roll (random unowned buddy). Deliberately steep:
 // base earn is 1 Spark/sec (+0.4/sec per extra owned buddy, +0.1/sec per feed
-// level), so at ~8 h/day of the app running this is roughly a week's earnings —
+// level), so at ~8 h/day of the app running this is roughly a week's earnings,
 // a real reward, not a formality. Tune this single number to taste.
 const GUMBALL_COST = 300000;
 
@@ -22,8 +22,8 @@ const GUMBALL_COST = 300000;
 // soft-body-mesh pipeline. (search: ROSTER)
 const CHARACTERS = [
   { id: 'blob',  name: 'Blob', tier: 1, move: 'walk',  rarity: 'common',   cost: 0,   personality: 'sunny', blurb: 'A cheerful little slime. Squishy, glossy, alive.', implemented: true },
-  { id: 'ghost', name: 'Boo',  tier: 1, move: 'float', rarity: 'uncommon', cost: 600, personality: 'shy',   blurb: 'A bashful ghost — floats, swirls, and phases in and out.', implemented: true },
-  { id: 'cat',   name: 'Pib',  tier: 1, move: 'walk',  gait: 'step', rarity: 'rare', cost: 900, personality: 'playful', blurb: 'A cozy orange tabby — strolls about, sits to watch, and curls up for naps. Now and then it spots a butterfly and gives chase.', implemented: true },
+  { id: 'ghost', name: 'Boo',  tier: 1, move: 'float', rarity: 'uncommon', cost: 600, personality: 'shy',   blurb: 'A bashful ghost, floats, swirls, and phases in and out.', implemented: true },
+  { id: 'cat',   name: 'Pib',  tier: 1, move: 'walk',  gait: 'step', rarity: 'rare', cost: 900, personality: 'playful', blurb: 'A cozy orange tabby, strolls about, sits to watch, and curls up for naps. Now and then it spots a butterfly and gives chase.', implemented: true },
   // Tier 2: rarer (unique), but can come out of any crank.
   { id: 'hero',  name: 'Captain Cram', tier: 2, move: 'walk', gait: 'step', rarity: 'unique', cost: 1500, personality: 'hyper', blurb: 'A tiny 16-bit caped crusader fuelled by revision. Leaps off the top of the screen, patrols the skies and powers up with +1 INT.', implemented: true },
 ];
@@ -60,7 +60,7 @@ const IMPLEMENTED_IDS = CHARACTERS.filter(c => c.implemented).map(c => c.id);
 
 const DEFAULTS = {
   version: 6,
-  sparks: 800,                 // a little to play with — enough for a first gumball crank
+  sparks: 800,                 // a little to play with, enough for a first gumball crank
   active: 'blob',
   owned: ['blob'],             // start with just Blob; everyone else lives in the gumball machine
   levels: {},

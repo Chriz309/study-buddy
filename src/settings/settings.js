@@ -53,11 +53,11 @@
     const crank = $('#gmCrank'), desc = $('#gmDesc'), res = $('#gmResult');
     if (pool.length === 0) {
       crank.disabled = true;
-      desc.textContent = 'You’ve adopted every friend available right now — more are on the way! 🎉';
+      desc.textContent = 'You’ve adopted every friend available right now, more are on the way! 🎉';
       if (!res.querySelector('.gm-reveal')) { res.textContent = 'Collection complete'; res.classList.add('none'); }
     } else {
       crank.disabled = !affordable(cost);
-      desc.textContent = `Crank the handle to adopt a random new buddy you don’t own yet — ${pool.length} still hiding inside.`;
+      desc.textContent = `Crank the handle to adopt a random new buddy you don’t own yet, ${pool.length} still hiding inside.`;
     }
   }
   let rolling = false;
@@ -73,7 +73,7 @@
       if (rolling || crank.disabled) return;
       const pool = state.gumballPool || [];
       if (pool.length === 0) return;
-      if (!affordable(state.gumballCost || 500)) { setResult('Not enough ⚡ — keep studying!', true); return; }
+      if (!affordable(state.gumballCost || 500)) { setResult('Not enough ⚡, keep studying!', true); return; }
       rolling = true; $('#gumball').classList.add('spin'); setResult('…', true);
       let r; try { r = await window.buddy.roll(); } catch { r = null; }
       setTimeout(() => {
@@ -81,7 +81,7 @@
         if (r && r.ok) reveal(r);
         else if (r && r.reason === 'complete') setResult('You’ve collected them all! 🎉', true);
         else if (r && r.reason === 'poor') setResult('Not enough ⚡', true);
-        else setResult('Something went wrong — try again.', true);
+        else setResult('Something went wrong, try again.', true);
       }, 750);
     });
   }
@@ -191,7 +191,7 @@
       ${rowRange('Mischief', 'Higher = livelier: more climbing, peeking, jumping and zoomies, and special antics more often.', 'mischief', 0, 100, 5, s.mischief, '%')}
       ${rowRange('Speed', 'How fast it moves around.', 'speed', 0.4, 2, 0.1, s.speed, '×')}
       ${rowSelect('Size', 'How big it appears on screen.', 'size', sizeOpts(s.size), s.size)}
-      ${rowToggle('Stay in one spot', 'Naughty corner: stops roaming — just idle animations, little hops and reactions where it stands.', 'stayPut', s.stayPut)}
+      ${rowToggle('Stay in one spot', 'Naughty corner: stops roaming, just idle animations, little hops and reactions where it stands.', 'stayPut', s.stayPut)}
       ${rowToggle('Special antics', 'Every buddy has its own: Pib chases a butterfly, Captain Cram flies a patrol, Blob scales the wall or goes on a bounce spree, Boo dashes through walls or swoops. Happens more often the higher Mischief is. Never in fullscreen.', 'antics', s.antics !== false)}
       ${state.platform === 'win32' ? rowToggle('Desktop mischief', 'Now and then your buddy appears to play with your taskbar, icons and windows. Only a drawn illusion on top: nothing is ever moved, clicked or typed, and it stops the moment you come near. Windows only.', 'deskMischief', !!state.mischiefOn) + rowSelect('Mischief frequency', 'How often the desktop pranks happen.', 'deskMischiefFreq', [['rare', 'Rare'], ['normal', 'Normal'], ['chaos', 'Chaos']], s.deskMischiefFreq || 'normal') : ''}
       ${rowToggle('Speech bubbles', 'Let it say things now and then.', 'speech', s.speech)}
@@ -238,7 +238,7 @@
       const u = state.update, st = $('#updateStatus');
       const map = { idle:'', checking:'Checking…', current:'You’re up to date.',
         available:'Downloading update ' + (u.info && u.info.version || '') + '…',
-        downloaded:'Update ' + (u.info && u.info.version || '') + ' downloaded — ready to install.',
+        downloaded:'Update ' + (u.info && u.info.version || '') + ' downloaded, ready to install.',
         manual:'Study Buddy ' + (u.info && u.info.version || '') + ' is out!',
         error:'Could not check right now.' };
       st.textContent = map[u.status] || '';
@@ -262,7 +262,7 @@
   // ---- wire state ----
   function paintAll() {
     paintWallet(); paintShop(); paintCare(); paintBehaviour(); paintAbout();
-    $('#aboutVer').textContent = 'current version ' + (state.appVersion || '—');
+    $('#aboutVer').textContent = 'current version ' + (state.appVersion || '-');
     const dv = $('#ctlDev'); if (dv) dv.style.display = state.devTools ? '' : 'none';
   }
   window.buddy.onSparks((n) => {

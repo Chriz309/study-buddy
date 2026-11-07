@@ -9,6 +9,7 @@ const { CHARACTERS, CURRENCY, DEV_TOOLS, GUMBALL_COST, RARITIES, PERSONALITIES, 
 const fs = require('fs');
 const geo = require('../shared/geometry');
 const watchdog = require('./watchdog');
+const pacing = require('./pacing');
 const scripts = require('./scripts');
 const toy = require('./toy');
 const devrun = require('./devrun');
@@ -66,14 +67,14 @@ let dragStartAt = 0, dragPingAt = 0;   // drag heartbeat (see watchdog)
 let update = { status: 'idle', info: null };
 
 // Keep the software WebGL fallback (SwiftShader). Newer Chromium (Electron 32+) no longer
-// falls back automatically when a PC's graphics driver is blocklisted — old laptops, some
-// lab PCs, VMs — which would leave the pet invisible. It's flagged "unsafe" only for
+// falls back automatically when a PC's graphics driver is blocklisted, old laptops, some
+// lab PCs, VMs, which would leave the pet invisible. It's flagged "unsafe" only for
 // untrusted websites; Study Buddy only ever loads its own local pages.
 app.commandLine.appendSwitch('enable-unsafe-swiftshader');
 
 // Software-graphics safety net. If a PC's graphics process can't start (broken driver,
 // remote desktop, some VMs) Electron 31 quietly fell back to software rendering, but
-// newer Electron doesn't — the pet would be invisible. We detect that once after start-up,
+// newer Electron doesn't, the pet would be invisible. We detect that once after start-up,
 // remember it in a small flag file and relaunch in software mode (and stay in it on that PC).
 const SOFTWARE_GL_FLAG = path.join(app.getPath('userData'), 'use-software-graphics');
 const useSoftwareGL = (() => { try { return require('fs').existsSync(SOFTWARE_GL_FLAG); } catch { return false; } })();
@@ -103,6 +104,11 @@ function petBox(M) {
   const localY = Ht - Math.round(M * 0.22) - M;   // sprite top within the window
   return { Wd, Ht, localX, localY };
 }
+// Click-through WITHOUT forwarding: forward:true installs a global mouse hook on Windows and the window then
+// answers every mouse move with its own (arrow) cursor, which fought the I-beam / link cursors of the app underneath
+// and made the pointer flicker and stutter. We never need forwarded moves: the loop polls the global cursor and
+// decides itself when to capture the mouse (see setPetInteractive).
+function clickThrough(w) { w.setIgnoreMouseEvents(true); }
 function createPetWindow() {
   if (petWin && !petWin.isDestroyed()) return;
   const { Wd, Ht } = petBox(engine.size);
@@ -116,7 +122,7 @@ function createPetWindow() {
   petWin._interactive = false; petWin._localX = 0; petWin._localY = 0; petWin._shown = true;
   petWin.setAlwaysOnTop(true, 'screen-saver');
   petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
-  petWin.setIgnoreMouseEvents(true, { forward: true });
+  clickThrough(petWin);
   petWin.loadFile(INDEX);
   // show once so the window exists; after this we only fade opacity, never hide()
   petWin.once('ready-to-show', () => { petWin.showInactive(); applyVisibility(); petWin.webContents.send('state', fullState()); });
@@ -125,6 +131,7 @@ function createPetWindow() {
   // A crashed / hung / failed-to-load renderer leaves a transparent window that draws nothing
   // (the "sprite stopped responding" look). Reload it; if it keeps dying, rebuild the window.
   const wc = petWin.webContents;
+  wc.on('did-finish-load', () => { if (petWin) petWin._interactive = null; });   // fresh page: re-apply the mouse style on the next frame
   wc.on('render-process-gone', (_e, d) => { logError('pet renderer gone', JSON.stringify(d)); reloadPetSoon(); });
   wc.on('unresponsive', () => { logError('pet renderer unresponsive', ''); reloadPetSoon(); });
   // code -3 = ABORTED (a navigation superseded by another): not a failure
@@ -179,9 +186,9 @@ function applyVisibility() {
   try {
     if (vis) {
       petWin.setOpacity(1); petWin.setAlwaysOnTop(true, 'screen-saver');
-      petWin.setIgnoreMouseEvents(true, { forward: true }); petWin._interactive = null; petWin._iTick = 99;
+      clickThrough(petWin); petWin._interactive = null; petWin._topAt = 0;
     } else {
-      petWin.setIgnoreMouseEvents(true, { forward: true }); petWin.setAlwaysOnTop(false); petWin.setOpacity(0);
+      clickThrough(petWin); petWin._interactive = false; petWin.setAlwaysOnTop(false); petWin.setOpacity(0);
       resetInteraction(); engine.cancelScript('hidden');   // a drag/antic must not keep running (or resume) behind a hidden window
       if (petWin.webContents && !petWin.webContents.isDestroyed()) petWin.webContents.send('pet', { show: false });
     }
@@ -215,23 +222,25 @@ function startEngine() {
   engine.pos = { x: pb.x + pb.width * 0.4, y: pb.y + pb.height - engine.size };
   syncEngineSettings(); syncActiveChar();
 
-  let calmSkip = 0;
+  let calmSkip = 0, motion = { x: NaN, y: NaN, until: 0 };
   setInterval(() => { try { loopOnce(); } catch (e) { logError('engine loop', e); } }, 1000 / 60);
   function loopOnce() {
     if (!petWin || petWin.isDestroyed()) return;
     if (fsDisplays.size && allDisplaysFullscreen()) { applyVisibility(); return; }   // every display is covered: hidden and idle, nothing moves
     // CPU saver: when the pet is resting (sitting / idle / asleep, not being dragged
     // or carried along) run this loop at 20fps instead of 60. Anything that moves
-    // — walking, falling, jumping, climbing, dragging — still gets the full 60fps.
-    const calm = !engine.dragging && !grabOff && !engine.script && (engine.state === 'sleep' || engine.state === 'sit' || engine.state === 'idle')
-      && Math.abs(engine.vel.x) < 1 && Math.abs(engine.vel.y) < 1;
+    //, walking, falling, jumping, climbing, dragging, still gets the full 60fps.
+    // A floating ghost has vel == 0 even while it drifts, so calm also needs real motion to have stopped (pacing.js);
+    // otherwise a slowly drifting ghost was drawn at 20fps and stepped between whole pixels.
+    const now = Date.now();
+    const calm = pacing.isCalm(engine, !!grabOff, now, motion.until);
     if (calm && (++calmSkip % 3)) return;
     if (!calm) calmSkip = 0;
-    const now = Date.now();
     const cur = screen.getCursorScreenPoint();
     engine.setCursor({ x: cur.x, y: cur.y }); mischiefActivity.note(cur.x, cur.y, now);   // the only per-frame cost of desktop mischief: one EMA update
     if (grabOff && engine.dragging) engine.dragTo(cur.x - grabOff.dx + engine.size / 2, cur.y - grabOff.dy + engine.size / 2);
     engine.tick(now);
+    motion = pacing.trackMotion(motion, engine.pos, now);
     if (fsDisplays.size && spriteTouchesFullscreen()) moveOffFullscreen();   // it wandered or was dropped onto a covered display
     applyVisibility();
     if (!engine.script && toy.isActive()) toy.destroy();     // never leave the toy window behind
@@ -250,9 +259,10 @@ function positionPetWindow() {
     const w = Math.max(1, Math.min(32000, Wd)), h = Math.max(1, Math.min(32000, Ht));
     const b = petWin.getBounds();
     petWin._localX = localX; petWin._localY = localY; petWin._want = { x, y, width: w, height: h };
-    if (b.width !== w || b.height !== h) petWin.setBounds({ x, y, width: w, height: h });
+    petWin._fx = pacing.subpixel(engine.pos.x - localX, x); petWin._fy = pacing.subpixel(engine.pos.y - localY, y);   // sub-pixel remainder, drawn by the renderer
+    if (b.width !== w || b.height !== h) { petWin.setBounds({ x, y, width: w, height: h }); petWin._interactive = null; }   // a resize / DPI rescale can drop the mouse style: re-apply it next frame
     else if (b.x !== x || b.y !== y) petWin.setPosition(x, y);
-  } catch (e) { /* transient bad value — skip this frame rather than crash */ }
+  } catch (e) { /* transient bad value, skip this frame rather than crash */ }
 }
 let _lastPx = null, _lastPt = 0, _vx = 0;
 function sendPet() {
@@ -261,28 +271,32 @@ function sendPet() {
   if (_lastPx != null && now > _lastPt) { const v = (engine.pos.x - _lastPx) / ((now - _lastPt) / 1000); if (Number.isFinite(v)) _vx += (v - _vx) * 0.3; }
   _lastPx = engine.pos.x; _lastPt = now;
   const mf = engine.mischief;   // set only while a mischief script runs: clip line (peeking out of the taskbar) and tilt
-  petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, size: engine.size, state: engine.state, facing: engine.facing, vx: Math.round(_vx),
+  petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, fx: petWin._fx || 0, fy: petWin._fy || 0, size: engine.size, state: engine.state, facing: engine.facing, vx: Math.round(_vx),
     clip: mf && mf.clipY != null ? Math.round(mf.clipY - (engine.pos.y - petWin._localY)) : null, rot: mf && mf.rot ? Math.round(mf.rot) : 0 });
 }
+// The window captures the mouse only while the cursor is over the pet (or it is being dragged). The native call is made
+// ONLY when that state changes, or when something that can silently drop the style happened (resize / DPI change,
+// display change, wake from sleep, page reload, watchdog finding a drifted window): each of those sets
+// petWin._interactive = null, which forces one re-apply on the next frame. No timer: re-applying forwarding on a
+// timer re-installed the Windows mouse hook every half second (cursor flicker, mouse stutter).
 function setPetInteractive(cur) {
   if (!petWin || petWin.isDestroyed() || !petWin._shown) return;
-  const pad = Math.max(18, engine.size * 0.5);
-  const want = engine.dragging || engine.hitTest(cur.x, cur.y, pad);
-  // Re-assert periodically (every ~0.5s) even when unchanged: a setBounds / DPI
-  // change / focus event can silently drop the mouse-passthrough style, which is
-  // what left the pet "stuck, can't interact". This self-heals it within 0.5s.
-  petWin._iTick = (petWin._iTick || 0) + 1;
-  if (petWin._interactive !== want || petWin._iTick >= 30) {
-    petWin._interactive = want; petWin._iTick = 0;
-    if (want) petWin.setIgnoreMouseEvents(false); else petWin.setIgnoreMouseEvents(true, { forward: true });
+  const want = !!(engine.dragging || engine.hitTest(cur.x, cur.y, pacing.hitPad(engine.size, petWin._interactive === true)));
+  if (petWin._interactive !== want) {
+    petWin._interactive = want;
+    if (want) petWin.setIgnoreMouseEvents(false); else clickThrough(petWin);
   }
 }
-// keep the pet above other windows; Windows can silently drop topmost
+// keep the pet above other windows; Windows can silently drop topmost. The flag is a cheap getter (checked ~2x/s);
+// the z-order bump (which also covers being buried under another topmost window) runs every ~6s.
 function keepOnTop() {
-  petWin._topTick = (petWin._topTick || 0) + 1;
-  if (petWin._topTick >= 90) { petWin._topTick = 0;
-    try { petWin.setAlwaysOnTop(true, 'screen-saver'); if (petWin.moveTop) petWin.moveTop(); } catch {}
-  }
+  const now = Date.now();
+  if (now - (petWin._topChk || 0) < 500 && petWin._topAt !== 0) return;
+  petWin._topChk = now;
+  try {
+    if (!petWin.isAlwaysOnTop()) petWin.setAlwaysOnTop(true, 'screen-saver');
+    if (now - (petWin._topAt || 0) >= 6000) { petWin._topAt = now; petWin.setAlwaysOnTop(true, 'screen-saver'); if (petWin.moveTop) petWin.moveTop(); }
+  } catch {}
 }
 function syncEngineSettings() {
   const s = store.get().settings;
@@ -495,7 +509,7 @@ function closeUpdatePopup() {
 }
 
 // A small on-screen toast (bottom-right of the primary screen) that appears even
-// when only the sprite is visible — no need to open Settings.
+// when only the sprite is visible, no need to open Settings.
 function showUpdatePopup(version) {
   if (_installing) return;
   if (fsDisplays.size) { pendingPopup = { version }; devLog('update popup waits for the fullscreen app'); return; }   // never over a movie / game
@@ -531,7 +545,7 @@ function initUpdates() {
   autoUpdater.on('error', (e) => { update = { status: 'error', info: { message: String(e && e.message || e) } }; pushState(); });
   autoUpdater.on('update-downloaded', (i) => {
     update = { status: 'downloaded', info: { version: i && i.version } }; pushState();
-    if (tray && tray.displayBalloon) tray.displayBalloon({ title: 'Study Buddy', content: `Update ${i && i.version || ''} downloaded — ready to install.` });
+    if (tray && tray.displayBalloon) tray.displayBalloon({ title: 'Study Buddy', content: `Update ${i && i.version || ''} downloaded, ready to install.` });
     showUpdatePopup(i && i.version);          // on-screen toast, no need to open settings
   });
   ipcMain.handle('update:check', () => { try { autoUpdater.checkForUpdates(); } catch {} return true; });
@@ -641,6 +655,7 @@ ipcMain.on('pet:drag', () => {});                       // no-op: loop drives dr
 ipcMain.on('pet:dragPing', () => { dragPingAt = Date.now(); });   // renderer heartbeat while it believes a drag is live
 ipcMain.on('pet:release', () => { if (engine.dragging) engine.release(); grabOff = null; dragPingAt = 0; });
 ipcMain.on('pet:tap', () => engine.petted());
+ipcMain.on('pet:speaking', (_e, ms) => { engine.holdForSpeech(Date.now(), Number(ms)); });   // a speech line is showing: stand still until it is gone
 
 ipcMain.on('app:openSettings', () => openSettings());
 ipcMain.on('app:toggle', (_e, key) => toggle(key));
@@ -660,7 +675,7 @@ function resetInteraction() {
 }
 function reassertWindowStyles() {
   if (!petWin || petWin.isDestroyed() || !petWin._shown) return;
-  petWin._interactive = null; petWin._iTick = 99;            // next tick re-applies click-through / interactive
+  petWin._interactive = null; petWin._topAt = 0;            // next tick re-applies click-through / interactive and the z-order
   try { petWin.setAlwaysOnTop(true, 'screen-saver'); if (petWin.moveTop) petWin.moveTop(); } catch {}
 }
 function runWatchdog() {
@@ -678,7 +693,8 @@ function runWatchdog() {
       else if (a === 'rescue') { devLog('watchdog: sprite off-screen, rescuing', engine.pos); engine.rescue(); resetInteraction(); }
       else if (a === 'releaseDrag') { devLog('watchdog: stuck drag released'); resetInteraction(); }
       else if (a === 'fixBounds') { try { petWin.setBounds(petWin._want); devLog('watchdog: window bounds re-applied'); } catch {} }
-      else if (a === 'reassertMouse' || a === 'reassertTop') { if (a === 'reassertMouse') { petWin._iTick = 99; } else { petWin._topTick = 99; } }
+      else if (a === 'reassertMouse') { petWin._interactive = null; }
+      else if (a === 'reassertTop') { petWin._topAt = 0; }
     }
   } catch (e) { logError('watchdog', e); }
 }
@@ -879,6 +895,7 @@ function relayout() {
       const ids = new Set(screen.getAllDisplays().map(d => d.id));          // forget fullscreen flags of unplugged monitors
       fsDisplays = fsTracker.forget(ids);
       syncWorld(); moveOffFullscreen(); applyVisibility(); runWatchdog();
+      if (petWin && !petWin.isDestroyed()) { petWin._interactive = null; petWin._topAt = 0; }   // monitors changed (DPI / layout): re-apply mouse style + z-order once
     } catch (e) { logError('relayout', e); }
   }, 300);
 }
@@ -902,7 +919,7 @@ app.on('ready', () => {
   scheduleAntic();
   initMischief();
   if (DEV) { devLog('userData', app.getPath('userData'), 'dev', DEV, 'infiniteSparks', economy.infinite); startDevRun(); }
-  setTimeout(checkGraphicsOnce, 6000);   // see "Software-graphics safety net" at the top  // window-awareness / fullscreen poll (Windows) — gentler on CPU
+  setTimeout(checkGraphicsOnce, 6000);   // see "Software-graphics safety net" at the top  // window-awareness / fullscreen poll (Windows), gentler on CPU
 });
 app.on('window-all-closed', () => { /* keep running in tray */ });
 app.on('activate', () => openSettings());   // macOS: clicking the Dock icon opens Shop & Settings

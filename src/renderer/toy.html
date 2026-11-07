@@ -9,7 +9,7 @@
   html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; pointer-events: none; }
   /* a butterfly: two wing pairs that flap by squashing horizontally; flips to face its flight direction */
   body { display: flex; align-items: center; justify-content: center; }
-  svg { width: 100%; height: 100%; overflow: visible; transform: scaleX(var(--d, 1)); filter: drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+  svg { flex: none; width: var(--s, 100%); height: var(--s, 100%); overflow: visible; transform: scaleX(var(--d, 1)); filter: drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
   body[data-dir="-1"] { --d: -1; }
   .wing { transform-box: fill-box; transform-origin: 50% 50%; animation: flap .16s ease-in-out infinite alternate; }
   .wing.l { transform-origin: 100% 50%; }

@@ -771,6 +771,8 @@ function initMischief() {
     holdBrain: (ms) => { engine.nextDecision = Math.max(engine.nextDecision || 0, Date.now() + ms); }, makeProbe: () => createProbe(), char: () => store.get().active, cursor: () => devCursor || screen.getCursorScreenPoint(),
     emit: petEventOut, setFx: (fx) => { engine.mischief = fx; }, sleep: (ms) => new Promise(r => setTimeout(r, ms)),
     spriteBox: () => mlogic.R(engine.pos.x, engine.pos.y - engine.size * 0.3, engine.size, engine.size * 1.3),
+    // keep the buddy ON SCREEN but out of the capture (Windows 10 2004+ WDA_EXCLUDEFROMCAPTURE): no blink right before a gag
+    excludePet: (on) => { try { if (petWin && !petWin.isDestroyed()) petWin.setContentProtection(!!on); } catch {} },
     hidePet: (on) => { try { if (petWin && !petWin.isDestroyed()) petWin.setOpacity(on ? 0 : (petWin._shown ? 1 : 0)); } catch {} },
     onGo: () => { if (devDuring) devDuring(); },
     onResult: (r) => { if (r.status === 'aborted' && devAbortAt) { devLog('ABORT-LATENCY', r.id, r.reason, (Date.now() - devAbortAt) + 'ms'); devAbortAt = 0; } },

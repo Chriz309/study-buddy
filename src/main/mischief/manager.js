@@ -225,8 +225,9 @@ function createManager(d) {
     const capKeys = {}; for (const k of Object.keys(plan.tg)) if (plan.tg[k].w > 1 && plan.tg[k].h > 1) capKeys[k] = plan.tg[k];
     if (Object.keys(capKeys).length) {
       const sb = d.spriteBox(), hide = Object.values(capKeys).some(r => logic.intersects(logic.inflate(r, PAD + 2), sb));
-      if (hide) { d.hidePet(true); await d.sleep(80); }
-      try { crops = await d.host.capture(env.display, capKeys, PAD); } finally { if (hide) d.hidePet(false); }
+      const veil = (on) => (d.excludePet ? d.excludePet(on) : d.hidePet(on));   // exclude from capture (stays visible); fall back to hiding
+      if (hide) { veil(true); await d.sleep(80); }
+      try { crops = await d.host.capture(env.display, capKeys, PAD); } finally { if (hide) veil(false); }
       if (!crops) return { status: 'skipped', id, reason: 'capture-failed' };
     }
     // 2. nothing may have changed while we looked (foreground window, sprite state, display layout)

@@ -5,7 +5,7 @@ const fgProbe = require('./fgprobe');   // Windows foreground-window + fullscree
 const fsdetect = require('./fullscreen');   // pure: which displays are covered by a fullscreen app
 const store = require('./store');
 const engine = require('./engine');
-const { CHARACTERS, CURRENCY, DEV_TOOLS, GUMBALL_COST, RARITIES, PERSONALITIES, characterById, rollPool, lockedIds, tierUnlocked } = require('../shared/catalog');
+const { CHARACTERS, CURRENCY, DEV_TOOLS, GUMBALL_COST, RARITIES, PERSONALITIES, characterById, rollPool, lockedIds, tierUnlocked, pickWeighted } = require('../shared/catalog');
 const fs = require('fs');
 const geo = require('../shared/geometry');
 const watchdog = require('./watchdog');
@@ -566,11 +566,11 @@ function gumballCost() {
 // Gumball machine: spend Sparks for a random buddy you don't own yet.
 ipcMain.handle('buddy:roll', () => {
   const s = store.get();
-  const pool = rollPool(s.owned);                                            // higher tiers only once the tier below is complete
+  const pool = rollPool(s.owned);                                            // every unowned buddy, any tier
   if (pool.length === 0) return { ok: false, reason: 'complete' };          // owns everything available
   const cost = gumballCost();
   if (!economy.canAfford(s.sparks, cost)) return { ok: false, reason: 'poor', cost };
-  const got = pool[Math.floor(Math.random() * pool.length)];
+  const got = pickWeighted(pool, Math.random);                               // rarity-weighted
   store.set({ sparks: economy.after(s.sparks, cost), owned: [...s.owned, got.id], active: got.id });
   syncActiveChar(); pushState();
   showHatch(got.id, got.name, got.rarity);   // egg-hatch reveal on the desktop

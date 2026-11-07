@@ -16,15 +16,20 @@ test('Captain Cram is a real tier-2 unique character priced above the rest', () 
   assert.ok(cat.RARITIES[h.rarity]);
 });
 
-test('tier gating: the hero only enters the gumball machine once every tier-1 buddy is owned', () => {
+test('gumball: every unowned buddy is in the pool from the first crank, any tier', () => {
   const ids = (o) => cat.rollPool(o).map(c => c.id).sort();
-  assert.deepEqual(ids(['blob']), ['cat', 'ghost']);
-  assert.deepEqual(ids(['blob', 'ghost']), ['cat']);
-  assert.deepEqual(ids(['blob', 'cat', 'ghost']), ['hero']);
+  assert.deepEqual(ids(['blob']), ['cat', 'ghost', 'hero']);
+  assert.deepEqual(ids(['blob', 'ghost']), ['cat', 'hero']);
   assert.deepEqual(ids(['blob', 'cat', 'ghost', 'hero']), []);
-  assert.deepEqual(cat.lockedIds(['blob']), ['hero']);
-  assert.deepEqual(cat.lockedIds(['blob', 'cat', 'ghost']), []);
-  assert.equal(cat.tierUnlocked(2, ['blob']), false); assert.equal(cat.tierUnlocked(1, []), true);
+  assert.deepEqual(cat.lockedIds(['blob']), []);
+});
+
+test('gumball: picks are rarity-weighted, the unique hero can come out of the first crank but less often', () => {
+  const pool = cat.rollPool(['blob']); const n = { ghost: 0, cat: 0, hero: 0 };
+  let seed = 7; const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 0; i < 20000; i++) n[cat.pickWeighted(pool, rand).id]++;
+  assert.ok(n.hero > 1000, 'hero shows up'); assert.ok(n.ghost > n.cat && n.cat > n.hero, JSON.stringify(n));
+  assert.equal(cat.pickWeighted(pool, () => 0).id, pool[0].id); assert.equal(cat.pickWeighted(pool, () => 0.999999).id, pool[pool.length - 1].id);
 });
 
 test('defaults: antics on, desktop mischief on, version 6', () => { assert.equal(cat.DEFAULTS.settings.antics, true); assert.equal(cat.DEFAULTS.settings.deskMischief, true); assert.equal(cat.DEFAULTS.version, 6); });

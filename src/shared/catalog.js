@@ -24,26 +24,31 @@ const CHARACTERS = [
   { id: 'blob',  name: 'Blob', tier: 1, move: 'walk',  rarity: 'common',   cost: 0,   personality: 'sunny', blurb: 'A cheerful little slime. Squishy, glossy, alive.', implemented: true },
   { id: 'ghost', name: 'Boo',  tier: 1, move: 'float', rarity: 'uncommon', cost: 600, personality: 'shy',   blurb: 'A bashful ghost — floats, swirls, and phases in and out.', implemented: true },
   { id: 'cat',   name: 'Pib',  tier: 1, move: 'walk',  gait: 'step', rarity: 'rare', cost: 900, personality: 'playful', blurb: 'A cozy orange tabby — strolls about, sits to watch, and curls up for naps. Now and then it spots a butterfly and gives chase.', implemented: true },
-  // Tier 2: only enters the gumball machine once every tier-1 buddy is adopted (see rollPool).
+  // Tier 2: rarer (unique), but can come out of any crank.
   { id: 'hero',  name: 'Captain Cram', tier: 2, move: 'walk', gait: 'step', rarity: 'unique', cost: 1500, personality: 'hyper', blurb: 'A tiny 16-bit caped crusader fuelled by revision. Leaps off the top of the screen, patrols the skies and powers up with +1 INT.', implemented: true },
 ];
 
-// Which buddies the gumball machine can hand out for a given owned list. A higher tier only
-// unlocks once every implemented buddy of the tier below is owned (tier 1 is always open).
-function tierUnlocked(tier, owned) {
-  for (const c of CHARACTERS) if (c.implemented && c.tier < tier && !owned.includes(c.id)) return false;
-  return true;
+// Which buddies the gumball machine can hand out: every implemented buddy you don't own yet.
+// Tiers no longer gate the machine (since 0.8): any buddy can come out of any crank, weighted by rarity.
+function tierUnlocked(tier, owned) { return true; }
+function rollPool(owned) { return CHARACTERS.filter(c => c.implemented && !owned.includes(c.id)); }
+function lockedIds(owned) { return []; }
+// Pick one buddy from the pool, weighted by rarity (rarer = less likely, never impossible).
+function pickWeighted(pool, rand) {
+  const r = typeof rand === 'function' ? rand : Math.random;
+  const w = (c) => (RARITIES[c.rarity] && RARITIES[c.rarity].weight) || 1;
+  const total = pool.reduce((a, c) => a + w(c), 0);
+  let x = r() * total;
+  for (const c of pool) { x -= w(c); if (x < 0) return c; }
+  return pool[pool.length - 1];
 }
-function rollPool(owned) { return CHARACTERS.filter(c => c.implemented && !owned.includes(c.id) && tierUnlocked(c.tier || 1, owned)); }
-// implemented, not owned, but still behind a tier gate
-function lockedIds(owned) { return CHARACTERS.filter(c => c.implemented && !owned.includes(c.id) && !tierUnlocked(c.tier || 1, owned)).map(c => c.id); }
 
 const RARITIES = {
-  common:    { label: 'Common',    color: '#9aa4b2' },
-  uncommon:  { label: 'Uncommon',  color: '#54e0a0' },
-  rare:      { label: 'Rare',      color: '#53b9ff' },
-  unique:    { label: 'Unique',    color: '#c08bff' },
-  legendary: { label: 'Legendary', color: '#ffb43f' },
+  common:    { label: 'Common',    color: '#9aa4b2', weight: 50 },
+  uncommon:  { label: 'Uncommon',  color: '#54e0a0', weight: 30 },
+  rare:      { label: 'Rare',      color: '#53b9ff', weight: 15 },
+  unique:    { label: 'Unique',    color: '#c08bff', weight: 6 },
+  legendary: { label: 'Legendary', color: '#ffb43f', weight: 2 },
 };
 
 const PERSONALITIES = ['chill', 'hyper', 'sleepy', 'naughty'];
@@ -86,4 +91,4 @@ const DEFAULTS = {
 
 function characterById(id) { return CHARACTERS.find(c => c.id === id); }
 
-module.exports = { tierUnlocked, rollPool, lockedIds, CURRENCY, DEV_TOOLS, GUMBALL_COST, CHARACTERS, RARITIES, PERSONALITIES, DEFAULTS, characterById, IMPLEMENTED_IDS };
+module.exports = { tierUnlocked, rollPool, lockedIds, pickWeighted, CURRENCY, DEV_TOOLS, GUMBALL_COST, CHARACTERS, RARITIES, PERSONALITIES, DEFAULTS, characterById, IMPLEMENTED_IDS };

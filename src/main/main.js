@@ -10,6 +10,7 @@ const fs = require('fs');
 const geo = require('../shared/geometry');
 const watchdog = require('./watchdog');
 const pacing = require('./pacing');
+const inputHealth = require('./inputhealth').createInputHealth();   // notices a pet that should take the mouse but does not
 const scripts = require('./scripts');
 const toy = require('./toy');
 const devrun = require('./devrun');
@@ -125,8 +126,9 @@ function createPetWindow() {
   clickThrough(petWin);
   petWin.loadFile(INDEX);
   // show once so the window exists; after this we only fade opacity, never hide()
-  petWin.once('ready-to-show', () => { petWin.showInactive(); applyVisibility(); petWin.webContents.send('state', fullState()); });
-  petWin.on('closed', () => { petWin = null; });
+  const me = petWin;
+  petWin.once('ready-to-show', () => { if (petWin !== me || me.isDestroyed()) return; me.showInactive(); applyVisibility(); me.webContents.send('state', fullState()); });
+  petWin.on('closed', () => { if (petWin === me) petWin = null; });   // a rebuilt window must not be cleared by the old one closing
   petWin.on('session-end', () => { try { store.saveNow(); } catch {} });   // Windows logoff / shutdown
   // A crashed / hung / failed-to-load renderer leaves a transparent window that draws nothing
   // (the "sprite stopped responding" look). Reload it; if it keeps dying, rebuild the window.
@@ -286,6 +288,7 @@ function setPetInteractive(cur) {
     petWin._interactive = want;
     if (want) petWin.setIgnoreMouseEvents(false); else clickThrough(petWin);
   }
+  checkInputHealth(cur, want);
 }
 // keep the pet above other windows; Windows can silently drop topmost. The flag is a cheap getter (checked ~2x/s);
 // the z-order bump (which also covers being buried under another topmost window) runs every ~6s.
@@ -298,6 +301,37 @@ function keepOnTop() {
     if (now - (petWin._topAt || 0) >= 6000) { petWin._topAt = now; petWin.setAlwaysOnTop(true, 'screen-saver'); if (petWin.moveTop) petWin.moveTop(); }
   } catch {}
 }
+// Self-heal for "the buddy is there but cannot be clicked": the window is interactive and the cursor is moving over it, yet the
+// page reports no mouse events (Windows dropped the mouse style, or something else sits on top). Re-apply the style and the
+// z-order; if that keeps failing, rebuild the window (rate limited in inputhealth.js).
+let _hcCur = null;
+function checkInputHealth(cur, overPet) {
+  const moved = !!_hcCur && (_hcCur.x !== cur.x || _hcCur.y !== cur.y); _hcCur = { x: cur.x, y: cur.y };
+  if (!moved || petWin._interactive !== true || !overPet) { inputHealth.sample(Date.now(), { interactive: petWin._interactive, overPet, moved, blocked: false }); return; }
+  const a = inputHealth.sample(Date.now(), { interactive: true, overPet: true, moved: true, blocked: cursorOverOtherWindow(cur) });
+  if (!a) return;
+  devLog('input health:', a);
+  if (a === 'reapply') {
+    try { petWin.setContentProtection(false); petWin.setIgnoreMouseEvents(true); petWin.setIgnoreMouseEvents(false); petWin.setAlwaysOnTop(true, 'screen-saver'); if (petWin.moveTop) petWin.moveTop(); } catch {}
+  } else if (a === 'recreate') {
+    logError('input health', 'pet window stopped receiving the mouse; rebuilding it');
+    rebuildPetWindow();
+  }
+}
+// one of our own normal windows (settings, update popup) under the cursor: the pet is legitimately not getting the mouse
+function cursorOverOtherWindow(cur) {
+  try {
+    return BrowserWindow.getAllWindows().some(w => w !== petWin && !w.isDestroyed() && w.isVisible() && w.isFocusable()
+      && (b => cur.x >= b.x && cur.x < b.x + b.width && cur.y >= b.y && cur.y < b.y + b.height)(w.getBounds()));
+  } catch { return false; }
+}
+function rebuildPetWindow() {
+  const old = petWin; petWin = null;
+  try { if (old && !old.isDestroyed()) old.destroy(); } catch {}
+  resetInteraction();
+  createPetWindow();
+}
+ipcMain.on('pet:seen', () => inputHealth.seen());   // the renderer got a mouse event: input works
 function syncEngineSettings() {
   const s = store.get().settings;
   engine.setSettings({ speed: s.speed, personality: s.personality, mischief: s.mischief, stayPut: !!s.stayPut, reduceMotion: !!s.reduceMotion });
@@ -772,7 +806,7 @@ function initMischief() {
     emit: petEventOut, setFx: (fx) => { engine.mischief = fx; }, sleep: (ms) => new Promise(r => setTimeout(r, ms)),
     spriteBox: () => mlogic.R(engine.pos.x, engine.pos.y - engine.size * 0.3, engine.size, engine.size * 1.3),
     // keep the buddy ON SCREEN but out of the capture (Windows 10 2004+ WDA_EXCLUDEFROMCAPTURE): no blink right before a gag
-    excludePet: (on) => { try { if (petWin && !petWin.isDestroyed()) petWin.setContentProtection(!!on); } catch {} },
+    excludePet: (on) => { try { if (petWin && !petWin.isDestroyed()) { petWin.setContentProtection(!!on); if (!on) petWin._interactive = null; } } catch {} },   // re-apply the mouse style after the toggle
     hidePet: (on) => { try { if (petWin && !petWin.isDestroyed()) petWin.setOpacity(on ? 0 : (petWin._shown ? 1 : 0)); } catch {} },
     onGo: () => { if (devDuring) devDuring(); },
     onResult: (r) => { if (r.status === 'aborted' && devAbortAt) { devLog('ABORT-LATENCY', r.id, r.reason, (Date.now() - devAbortAt) + 'ms'); devAbortAt = 0; } },

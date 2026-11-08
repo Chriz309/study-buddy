@@ -257,6 +257,8 @@ Object.assign(POSE_H, window.CAT_ART_EXTRA_H||{});   // heights of the generated
   const PAD_MIN=14, PAD_K=0.28;   // hit margin round the sprite (keep in step with main.js hitPad)
   let dragId=null,lastPt=null,moved=false,downAt=0;
   function overPet(x,y){ const pad=Math.max(PAD_MIN, pet.size*PAD_K); return pet.show && x>=pet.x-pad && x<=pet.x+pet.size+pad && y>=pet.y-pad && y<=pet.y+pet.size+pad; }
+  // tell main the mouse reaches this page (throttled): if the window is meant to capture the mouse and these stop, main heals it
+  let seenAt=0; window.addEventListener('mousemove',()=>{ const t=performance.now(); if(t-seenAt>150){ seenAt=t; try{ window.buddy.petSeen(); }catch{} } },{passive:true});
   window.addEventListener('pointerdown',(e)=>{ if(e.button===2) return; if(!overPet(e.clientX,e.clientY)) return;
     dragId=e.pointerId; moved=false; downAt=Date.now(); lastPt={x:e.clientX,y:e.clientY};
     try{glc.setPointerCapture(e.pointerId);}catch{} e.preventDefault(); });

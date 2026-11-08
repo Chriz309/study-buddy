@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('buddy', {
   petRelease:    () => ipcRenderer.send('pet:release'),
   petTap:        () => ipcRenderer.send('pet:tap'),
   petSpeaking:   (ms) => ipcRenderer.send('pet:speaking', ms),
+  petSeen:       () => ipcRenderer.send('pet:seen'),
 
   // mutations (settings window)
   patchSettings: (patch) => ipcRenderer.invoke('settings:patch', patch),

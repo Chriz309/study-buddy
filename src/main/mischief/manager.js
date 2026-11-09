@@ -4,7 +4,9 @@
 // Restore is "destroy the overlay window": the overlay's contents die with it, so even a crash restores the screen.
 const logic = require('./logic');
 const GAGS = require('../../mischief/gags');
-const { G, spriteOf } = GAGS;
+const SPELLS = require('../../mischief/spells');
+const { spriteOf } = GAGS;
+const G = Object.assign({}, GAGS.G, SPELLS.G);   // the ordinary gags plus the wizard's spells (spells find nothing for any other buddy)
 
 const TICK_MS = 50;            // abort monitor period (cheap checks only: cursor, flags)
 const PROBE_MS = 110;          // how often the probe is asked for foreground / caret while a prank runs
@@ -91,7 +93,7 @@ function createManager(d) {
   const rectsOf = (m) => [...m.buttons, m.start, m.wifi, m.volume, m.battery, m.clock, ...m.desktop].filter(Boolean);
   // a fresh look at the desktop: same foreground window, no password field focused, and every target rect still exactly where we found it
   async function lookAgain(probe, scan, model, plan, displays) {
-    const s = await probe.request('scan', 3000); if (!s) return 'probe-lost';
+    let s = await probe.request('scan', 3000); if (!s) s = await probe.request('scan', 2000); if (!s) return 'probe-lost';   // one retry: a busy machine is not a lost probe
     if (s.pw) return 'password-field';
     const f0 = scan.fg, f1 = s.fg;
     if (!f1 || (f0 && (f0.h !== f1.h || !logic.sameRect(logic.fromArr(f0.r), logic.fromArr(f1.r), 2)))) return 'foreground-changed';
@@ -113,6 +115,7 @@ function createManager(d) {
       const scan = await probe.request('scan', 9000);
       if (!scan) result = { status: 'skipped', reason: 'probe-failed' };
       else {
+        probe.request('tick', 4000);   // warm-up (answer ignored): the first caret query of a fresh PowerShell is slow, so it is paid during the walk-in, not while the monitor waits for the first tick
         const displays = d.host.displays(), model = logic.buildModel(scan, d.host.toDip, displays), env = makeEnv(displays);
         if (!env) result = { status: 'skipped', reason: 'sprite-offscreen' };
         else {
@@ -120,7 +123,7 @@ function createManager(d) {
           for (const c of cands) {
             let tg = c.targets;
             if (tg.pending) {
-              if (!(await loadText(probe, model, env))) { lastWhy = 'no-text'; continue; }
+              if (!(await loadText(probe, model, env, !!G[c.id].fastText))) { lastWhy = 'no-text'; continue; }
               tg = G[c.id].find(model, env); if (!tg) { lastWhy = 'no-text'; continue; }
             }
             const r = await play(c.id, tg, env, probe, scan, model, displays);
@@ -142,12 +145,12 @@ function createManager(d) {
   function makeEnv(displays) {
     const e = d.engine, S = e.size, c = { x: e.pos.x + S / 2, y: e.pos.y + S / 2 }, disp = logic.displayAt(displays, c); if (!disp) return null;
     const wa = disp.workArea, b = disp.bounds;
-    return { char: d.char(), S, fy: wa.y + wa.height - S, sx: e.pos.x, sy: e.pos.y, wa: { x0: wa.x, x1: wa.x + wa.width, y0: wa.y, y1: wa.y + wa.height }, db: { x0: b.x, x1: b.x + b.width, y0: b.y, y1: b.y + b.height }, display: disp };
+    return { char: d.char(), rand: d.rand, S, fy: wa.y + wa.height - S, sx: e.pos.x, sy: e.pos.y, wa: { x0: wa.x, x1: wa.x + wa.width, y0: wa.y, y1: wa.y + wa.height }, db: { x0: b.x, x1: b.x + b.width, y0: b.y, y1: b.y + b.height }, display: disp };
   }
-  async function loadText(probe, model, env) {
+  async function loadText(probe, model, env, fast) {   // fast: the spells that only need a short line give up after ~2 s (a silent probe means a soft skip, never an 8 s wait)
     const w = model.win; if (!w || !w.allowed) return false;
-    const tx = await probe.request('text', 5000); if (!tx || tx.pw) { model.text = { pw: true, lines: [] }; return false; }     // password field: never
-    const tk = await probe.request('tick2', 3000), lines = logic.groupLines((tx.l || []).map(logic.fromArr).filter(Boolean).map(d.host.toDip));
+    const tx = await probe.request('text', fast ? 1500 : 5000); if (!tx || tx.pw) { model.text = { pw: true, lines: [] }; return false; }     // no answer or a password field: never
+    const tk = await probe.request('tick2', fast ? 800 : 3000), lines = logic.groupLines((tx.l || []).map(logic.fromArr).filter(Boolean).map(d.host.toDip));
     const cr = tk && (logic.fromArr(tk.s) || logic.fromArr(tk.c)); model.text = { pw: false, lines, caret: cr ? d.host.toDip(cr) : null, hasCaret: !!cr, pick: 0.2 + d.rand() * 0.6 };
     model.textSig = tk && { c: logic.fromArr(tk.c), s: logic.fromArr(tk.s), v: logic.fromArr(tk.v) };
     return lines.length > 0;
@@ -214,7 +217,7 @@ function createManager(d) {
     }
     const first = Object.values(plan.tg)[0] || plan.area, disp = logic.displayAt(displays, logic.center(first));
     if (!disp || disp.id !== env.display.id) return { status: 'skipped', id, reason: disp ? 'other-display' : 'target-offscreen' };
-    const zones = zonesOf(plan, env.S), near = Object.values(plan.tg), textMode = id === 'text';
+    const zones = zonesOf(plan, env.S), near = Object.values(plan.tg), textMode = id === 'text' || !!plan.text;   // plan.text: a spell that crops a piece of a text line also watches the caret
     const fg0 = scan.fg ? { h: scan.fg.h, r: logic.fromArr(scan.fg.r) } : null, layout0 = logic.layoutKey(displays);
     if (textMode && !model.textSig) return { status: 'skipped', id, reason: 'no-caret-signal' };
     if (logic.abortReason({ now: d.now(), startedAt: d.now(), cursor: d.cursor(), near, zones, layout0, layout: layout0, fg0, fg: fg0 })) return { status: 'skipped', id, reason: 'cursor-near-target' };
@@ -251,7 +254,7 @@ function createManager(d) {
         update(en) {
           const t = d.now() - startedAt, s = spriteOf(Math.max(0, t), plan);
           en.pos.x = s.x; en.pos.y = s.y; if (s.facing) en.facing = s.facing; en.setState(s.state, 1e9);
-          d.setFx({ clipY: s.clip, rot: s.rot });
+          d.setFx({ clipY: s.clip, rot: s.rot, sc: s.sc, hue: s.hue, alpha: s.alpha });
           while (evI < plan.ev.length && plan.ev[evI][0] <= t) { d.emit(plan.ev[evI][1], plan.ev[evI][2]); evI++; }
           return t >= plan.dur;
         },
@@ -284,7 +287,9 @@ function createManager(d) {
   // sprite boxes sampled along the choreography + every target, as the "prank area" the cursor must stay out of
   function zonesOf(plan, S) {
     const z = []; for (let t = 0; t <= plan.dur; t += 200) { const s = spriteOf(t, plan); z.push(logic.R(s.x, s.y, S, S)); }
-    for (const r of Object.values(plan.tg)) z.push(r); return z;
+    for (const r of Object.values(plan.tg)) z.push(r);
+    for (const r of plan.pr || []) z.push(r);   // props of the targetless spells (portals, cloud and rain, rune circle)
+    return z;
   }
 
   const sigOf2 = null;

@@ -48,6 +48,10 @@ main{flex:1;overflow:auto;padding:20px 22px}
 .badge.on{background:rgba(84,224,160,.16);color:var(--good)}
 .card p.blurb{font-size:12px;color:var(--dim);line-height:1.45;min-height:34px}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
+.pickrow{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:260px}
+.pickb{all:unset;cursor:pointer;font-size:12px;font-weight:700;padding:5px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim);opacity:.7}
+.pickb.on{color:var(--text);border-color:var(--accent2);background:rgba(83,214,255,.12);opacity:1}
+.pickb:hover{opacity:1}
 .chip{font-size:10px;font-weight:700;color:var(--accent2);background:rgba(83,214,255,.12);
   padding:2px 8px;border-radius:20px}
 .card .foot{margin-top:auto;display:flex;align-items:center;gap:8px}
@@ -151,6 +155,24 @@ button.sell{all:unset;cursor:pointer;font-size:11px;font-weight:800;color:#d9bcf
   border:1px solid #6a4a9a;border-radius:8px;padding:5px 9px;text-align:center;margin-top:4px}
 button.sell:hover{background:rgba(192,139,255,.26)}
 
+/* ---- study tab ---- */
+#studyRoot{display:flex;flex-direction:column;gap:14px;max-width:560px}
+#studyRoot .st-timer{align-items:center;text-align:center;gap:6px;padding:20px}
+.st-phase{font-size:13px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--accent2)}
+.st-clock{font-size:64px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--accent)}
+.st-clock.dim{color:var(--dim)}
+.st-dots{display:flex;gap:7px;align-items:center;justify-content:center;min-height:16px}
+.st-dots .dot{width:12px;height:12px;border-radius:50%;background:var(--panel2);border:1px solid var(--line)}
+.st-dots .dot.on{background:var(--good);border-color:var(--good)}.st-dots .dot.now{border-color:var(--accent);box-shadow:0 0 0 2px rgba(255,210,63,.25)}
+.st-dots .lbl{font-size:11.5px;color:var(--dim);margin-left:6px;font-weight:700}
+.st-sub{font-size:12.5px;color:var(--dim);margin-bottom:6px}
+.st-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.st-btns button.act{flex:none;padding:9px 16px}
+.st-btns button.act:disabled{opacity:.4;cursor:default;filter:none}
+.st-row{display:flex;justify-content:space-between;gap:16px;font-size:13px}
+.st-help h3,.st-stats h3{margin-bottom:4px}.st-help h4{font-size:11px;font-weight:800;color:var(--dim);letter-spacing:.6px;text-transform:uppercase;margin-top:6px}
+.st-help p,.st-help li{font-size:12.5px;line-height:1.5;color:var(--text)}.st-help ul{padding-left:18px;display:flex;flex-direction:column;gap:3px}
+
   </style>
   <title>Study Buddy</title>
 </head>
@@ -172,6 +194,8 @@ button.sell:hover{background:rgba(192,139,255,.26)}
   <nav id="tabs">
     <button data-tab="shop" class="active">Shop</button>
     <button data-tab="care">Care</button>
+    <button data-tab="study">Study</button>
+    <button data-tab="wardrobe">Wardrobe</button>
     <button data-tab="behaviour">Behaviour</button>
     <button data-tab="about">About</button>
   </nav>
@@ -204,6 +228,10 @@ button.sell:hover{background:rgba(192,139,255,.26)}
       <div id="careGrid"></div>
     </section>
 
+    <section id="study" class="tab"><div id="studyRoot"></div></section>
+
+    <section id="wardrobe" class="tab"><div id="wardrobeRoot"></div></section>
+
     <section id="behaviour" class="tab">
       <div class="rows" id="behaviourRows"></div>
     </section>
@@ -232,5 +260,10 @@ button.sell:hover{background:rgba(192,139,255,.26)}
   </main>
 
   <script src="settings.js"></script>
+  <script src="../renderer/art-cosmetics.js"></script>
+  <script src="../renderer/cosmetics.js"></script>
+  <script src="wardrobe.js"></script>
+  <script src="../shared/studyview.js"></script>
+  <script src="study.js"></script>
 </body>
 </html>

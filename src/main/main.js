@@ -5,7 +5,8 @@ const fgProbe = require('./fgprobe');   // Windows foreground-window + fullscree
 const fsdetect = require('./fullscreen');   // pure: which displays are covered by a fullscreen app
 const store = require('./store');
 const engine = require('./engine');
-const { CHARACTERS, CURRENCY, DEV_TOOLS, GUMBALL_COST, RARITIES, PERSONALITIES, characterById, rollPool, lockedIds, tierUnlocked, pickWeighted } = require('../shared/catalog');
+const { CHARACTERS, CURRENCY, DEV_TOOLS, GUMBALL_COST, RARITIES, PERSONALITIES, characterById, sizeFor, rollPool, lockedIds, tierUnlocked, pickWeighted, COSMETICS } = require('../shared/catalog');
+const wardrobe = require('../shared/wardrobe');
 const fs = require('fs');
 const geo = require('../shared/geometry');
 const watchdog = require('./watchdog');
@@ -14,11 +15,14 @@ const inputHealth = require('./inputhealth').createInputHealth();   // notices a
 const scripts = require('./scripts');
 const toy = require('./toy');
 const devrun = require('./devrun');
+const study = require('./study');                 // pomodoro state machine (pure): see "study timer" below
+const studyView_ = require('../shared/studyview');   // Study tab helpers (pure): command validation, labels, explainer copy
 const mlogic = require('./mischief/logic');       // desktop mischief (Windows overlay illusions): see src/main/mischief/
 const { createManager } = require('./mischief/manager');
 const { createHost } = require('./mischief/host');
 const { createProbe, killAll: killProbes } = require('./mischief/probe');
 const MGAGS = require('../mischief/gags');
+const { createCompanions } = require('./companions');   // multi-pet mode: the other owned buddies roam in their own small windows (settings.showAll)
 
 // --- dev mode (STUDYBUDDY_DEV=1): tray test items, a scripted command run and a log file. Off in
 // normal use; it also keeps test runs from registering a login item (see applyLoginItem).
@@ -203,7 +207,7 @@ function overlaysVisible() { return !userHidden; }
 // The engine's world: every display, except the ones a fullscreen app covers (so the sprite never roams onto them).
 // If every display is covered the full list stays (the sprite is hidden and idle then, see loopOnce).
 function worldDisplays() { const all = screen.getAllDisplays(), free = all.filter(d => !fsDisplays.has(d.id)); return free.length ? free : all; }
-function syncWorld() { engine.setWorld(worldDisplays()); }
+function syncWorld() { engine.setWorld(worldDisplays()); companions.onDisplaysChanged(); }
 function allDisplaysFullscreen() { const all = screen.getAllDisplays(); return all.length > 0 && all.every(d => fsDisplays.has(d.id)); }
 
 // --- engine loop (60fps): tick, route pet to its monitor, manage mouse capture
@@ -213,6 +217,7 @@ function startEngine() {
     state: () => {},                       // state is sent every frame in the pet packet
     event: (type, data) => {
       if (type === 'pet') store.set({ sparks: +(store.get().sparks + 1).toFixed(3) });
+      if (type === 'say' && studyFocusing()) return;   // chatter is off during a focus block (study lines are sent directly, not through the engine)
       if (petWin && !petWin.isDestroyed()) petWin.webContents.send('petEvent', Object.assign({ type }, data || {}));
     },
     toy: (cmd) => { try { toy.handle(cmd); } catch (e) { logError('toy', e); } },   // chase toy lives in its own window
@@ -228,6 +233,7 @@ function startEngine() {
   setInterval(() => { try { loopOnce(); } catch (e) { logError('engine loop', e); } }, 1000 / 60);
   function loopOnce() {
     if (!petWin || petWin.isDestroyed()) return;
+    try { companions.frame(Date.now()); } catch (e) { logError('companions', e); }   // no-op unless multi-pet mode created satellites
     if (fsDisplays.size && allDisplaysFullscreen()) { applyVisibility(); return; }   // every display is covered: hidden and idle, nothing moves
     // CPU saver: when the pet is resting (sitting / idle / asleep, not being dragged
     // or carried along) run this loop at 20fps instead of 60. Anything that moves
@@ -274,7 +280,8 @@ function sendPet() {
   _lastPx = engine.pos.x; _lastPt = now;
   const mf = engine.mischief;   // set only while a mischief script runs: clip line (peeking out of the taskbar) and tilt
   petWin.webContents.send('pet', { show: true, x: petWin._localX, y: petWin._localY, fx: petWin._fx || 0, fy: petWin._fy || 0, size: engine.size, state: engine.state, facing: engine.facing, vx: Math.round(_vx),
-    clip: mf && mf.clipY != null ? Math.round(mf.clipY - (engine.pos.y - petWin._localY)) : null, rot: mf && mf.rot ? Math.round(mf.rot) : 0 });
+    clip: mf && mf.clipY != null ? Math.round(mf.clipY - (engine.pos.y - petWin._localY)) : null, rot: mf && mf.rot ? Math.round(mf.rot) : 0,
+    sc: mf && Number.isFinite(mf.sc) ? Math.max(0.3, Math.min(1, mf.sc)) : 1, hue: mf && Number.isFinite(mf.hue) ? Math.round(mf.hue) : 0, alpha: mf && Number.isFinite(mf.alpha) ? Math.max(0, Math.min(1, mf.alpha)) : 1 });
 }
 // The window captures the mouse only while the cursor is over the pet (or it is being dragged). The native call is made
 // ONLY when that state changes, or when something that can silently drop the style happened (resize / DPI change,
@@ -331,19 +338,28 @@ function rebuildPetWindow() {
   resetInteraction();
   createPetWindow();
 }
-ipcMain.on('pet:seen', () => inputHealth.seen());   // the renderer got a mouse event: input works
+// Multi-pet mode (settings.showAll && more than one buddy owned): one satellite window per other owned buddy. Nothing exists otherwise.
+const companions = createCompanions({
+  BrowserWindow, screen, store, characterById, petBox, fullState: () => fullState(), worldDisplays: () => worldDisplays(), cursor: () => screen.getCursorScreenPoint(),
+  lead: () => ({ pos: engine.pos, size: engine.size }), leadActor: () => ({ id: store.get().active, engine, shown: !!(petWin && !petWin.isDestroyed() && petWin._shown) }), indexPath: INDEX, preloadPath: path.join(__dirname, 'preload.js'), softwareGL: useSoftwareGL,
+  gates: () => { const mr = !!(mischief && mischief.isRunning()); return { userHidden, fsDisplays, leadBusy: !!engine.script || mr, leadSpeaking: engine.isSpeaking(Date.now()), focus: studyFocusing(), mischiefRunning: mr }; },
+  log: (...a) => devLog(...a), logError,
+});
+ipcMain.on('pet:seen', (_e, a) => { const sat = a && a.sat && companions.get(a.sat); if (sat) sat.seen(); else inputHealth.seen(); });   // the renderer got a mouse event: input works
 function syncEngineSettings() {
   const s = store.get().settings;
-  engine.setSettings({ speed: s.speed, personality: s.personality, mischief: s.mischief, stayPut: !!s.stayPut, reduceMotion: !!s.reduceMotion });
+  const focus = studyFocusing();   // a running study focus block holds the buddy in place (calm, no antics)
+  engine.setSettings({ speed: s.speed, personality: s.personality, mischief: s.mischief, stayPut: !!s.stayPut || focus, focus, reduceMotion: !!s.reduceMotion });
   if (s.antics === false) engine.cancelScript('settings');
-  engine.setSize(s.size || 140);
+  engine.setSize(sizeFor(store.get().active, s.size));
 }
 let _lastActive = null;
 function syncActiveChar() {
   const id = store.get().active, c = characterById(id);
   if (id !== _lastActive) { engine.cancelScript('char'); _lastActive = id; anticPlanner.reset(Date.now()); devLog('character', id); }
-  engine.setMoveType(c && c.move ? c.move : 'walk'); engine.setGait(c && c.gait ? c.gait : 'hop');
+  engine.setMoveType(c && c.move ? c.move : 'walk'); engine.setGait(c && c.gait ? c.gait : 'hop'); engine.setSize(sizeFor(id, store.get().settings.size));
   scheduleAntic();
+  companions.sync();   // the lead changed: the old lead becomes a satellite, the new lead's satellite goes
 }
 
 // --- window awareness + fullscreen detection ---------------------------------
@@ -442,12 +458,13 @@ function fullState() {
   const s = store.get();
   const pool = rollPool(s.owned).map(c => c.id);
   return { ...s, lockedIds: lockedIds(s.owned), catalog: CHARACTERS, currency: CURRENCY, rarities: RARITIES, personalities: PERSONALITIES,
-    rate: sparkRate(), gumballCost: gumballCost(), gumballPool: pool, buddyHidden: userHidden,
-    devTools: DEV_TOOLS, infiniteSparks: economy.infinite, mischiefOn: mischiefEnabled(), update, platform: process.platform, appVersion: app.getVersion() };
+    cosmeticCatalog: COSMETICS, rate: sparkRate(), gumballCost: gumballCost(), gumballPool: pool, buddyHidden: userHidden,
+    study: studyView(), devTools: DEV_TOOLS, infiniteSparks: economy.infinite, mischiefOn: mischiefEnabled(), update, platform: process.platform, appVersion: app.getVersion() };
 }
 function pushState() {
   const payload = fullState();
   for (const w of [petWin, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send('state', payload);
+  companions.broadcast('state', payload);
 }
 
 // --- economy -------------------------------------------------------------
@@ -473,7 +490,7 @@ function buildTray() {
   tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img);
   tray.setToolTip(TOOLTIP); refreshTrayMenu();
   tray.on('click', () => openSettings());
-  if (DEV) tray.on('right-click', () => refreshTrayMenu());   // the dev status line is rebuilt each time the menu opens
+  tray.on('right-click', () => refreshTrayMenu());   // the study status line (and the dev status line) are rebuilt each time the menu opens
 }
 function devStatusLine() {
   const sec = (ms) => (ms == null ? '-' : '~' + Math.round(ms / 1000) + 's');
@@ -490,6 +507,8 @@ function refreshTrayMenu() {
     { label: s.settings.paused ? '▶  Resume idle points' : '⏸  Pause idle points', click: () => toggle('paused') },
     { label: shown ? '🙈  Hide buddy' : '👋  Show buddy', click: () => { if (shown) hideBuddy(); else showBuddy(); refreshTrayMenu(); } },
     { label: '🧲  Bring buddy back', click: () => bringBuddyBack() },
+    { label: 'Show all my buddies', type: 'checkbox', checked: !!s.settings.showAll, enabled: s.owned.length > 1, click: (mi) => applySettingsPatch({ showAll: mi.checked }) },
+    studyMenu(),
     { label: 'Start on login', type: 'checkbox', checked: s.settings.startOnBoot, click: (mi) => setStartOnBoot(mi.checked) },
     { type: 'separator' },
     { label: 'About', click: () => openSettings() },
@@ -497,6 +516,7 @@ function refreshTrayMenu() {
     ...(DEV ? [{ type: 'separator' }, { label: devStatusLine(), enabled: false }, { label: 'DEV: unlock Captain Cram', click: () => devUnlock('hero') }, { label: 'DEV: unlock Pib (cat)', click: () => devUnlock('cat') },
       { label: 'DEV: cat chase', click: () => devTrigger('chase') }, { label: 'DEV: hero landing', click: () => devTrigger('landing') },
       { label: 'DEV: hero patrol', click: () => devTrigger('patrol') }, { label: 'DEV: hero power up', click: () => devTrigger('powerup') },
+      { label: 'DEV: unlock Merlo (wizard)', click: () => devUnlock('wizard') }, ...['levitate', 'potion', 'blink', 'study', 'starshow'].map(n => ({ label: 'DEV: wizard ' + n, click: () => devTrigger(n) })),
       { label: 'DEV: mischief', submenu: [...Object.keys(MGAGS.G).map(id => ({ label: MGAGS.G[id].label, click: () => devPrank(id) })), { type: 'separator' },
         { label: 'chaos: a prank every 30-90 s', type: 'checkbox', checked: mischiefChaos, click: (mi) => { mischiefChaos = mi.checked; if (mischief) mischief.setChaos(mischiefChaos); devLog('mischief chaos', mischiefChaos); } }] }] : []),
     { label: 'Quit Study Buddy', click: () => { app.isQuiting = true; app.quit(); } },
@@ -531,6 +551,7 @@ function installUpdateNow() {
   app.isQuiting = true;
   try { store.saveNow(); } catch {}
   try { closeUpdatePopup(); } catch {}
+  try { companions.destroyAll(); } catch {}
   try { if (petWin && !petWin.isDestroyed()) petWin.destroy(); } catch {}
   try { if (settingsWin && !settingsWin.isDestroyed()) settingsWin.destroy(); } catch {}
   // isSilent = true (no installer wizard), isForceRunAfter = true (reopen after).
@@ -594,6 +615,7 @@ ipcMain.handle('settings:patch', (_e, patch) => applySettingsPatch(patch));
 function applySettingsPatch(patch) {
   store.set({ settings: patch }); if (DEV) devLog('settings', Object.keys(patch).map(k => k + '=' + patch[k]).join(' '));
   if ('startOnBoot' in patch) setStartOnBoot(patch.startOnBoot);
+  if ('showAll' in patch || 'hideBuddies' in patch) companions.sync();
   syncEngineSettings(); pushState(); refreshTrayMenu(); scheduleAntic(); if (mischief) { if (!mischiefEnabled()) mischief.stop('stopped'); mischief.refresh(); } return fullState();
 }
 ipcMain.handle('buddy:unlock', (_e, id) => {
@@ -602,7 +624,7 @@ ipcMain.handle('buddy:unlock', (_e, id) => {
   if (s.owned.includes(id)) return { ok: true };
   if (!tierUnlocked(c.tier || 1, s.owned)) return { ok: false, reason: 'locked' };
   if (!economy.canAfford(s.sparks, c.cost)) return { ok: false, reason: 'poor' };
-  store.set({ sparks: economy.after(s.sparks, c.cost), owned: [...s.owned, id], active: id }); pushState(); return { ok: true };
+  store.set({ sparks: economy.after(s.sparks, c.cost), owned: [...s.owned, id], active: id }); companions.sync(); pushState(); return { ok: true };
 });
 // Each buddy you already own makes the next crank 1.6x pricier (rounded to 1k).
 function gumballCost() {
@@ -656,6 +678,18 @@ ipcMain.handle('dev:sell', (_e, id) => {
   store.set({ owned, active }); syncActiveChar(); pushState(); return fullState();
 });
 
+// Wardrobe: buy a cosmetic with Sparks (the economy keeps dev builds infinite), equip/unequip per buddy and slot. Validation lives in shared/wardrobe.js.
+// store.replace (not set): set() deep-merges, which could never remove an unequipped slot.
+ipcMain.handle('cosmetic:buy', (_e, id) => {
+  const r = wardrobe.buyCosmetic(store.get(), id, economy);
+  if (r.ok) { store.replace({ ...store.get(), ...r.patch }); pushState(); }
+  return r.ok ? { ok: true, sparks: store.get().sparks } : { ok: false, reason: r.reason, cost: r.cost };
+});
+ipcMain.handle('cosmetic:equip', (_e, charId, slot, id) => {
+  const r = wardrobe.equipCosmetic(store.get(), charId, slot, id);
+  if (r.ok) { store.replace({ ...store.get(), ...r.patch }); pushState(); }
+  return r.ok ? { ok: true } : { ok: false, reason: r.reason };
+});
 ipcMain.handle('buddy:setActive', (_e, id) => { const s = store.get(); if (s.owned.includes(id)) { store.set({ active: id }); syncActiveChar(); pushState(); } return fullState(); });
 ipcMain.handle('buddy:rename', (_e, id, name) => {
   const s = store.get(); if (!s.owned.includes(id)) return fullState();
@@ -684,13 +718,16 @@ ipcMain.handle('buddy:feed', (_e, id) => {
 // pet input from the pet window. Dragging is driven by the GLOBAL cursor in the
 // engine loop (the window moves with the pet, so local coords would feed back),
 // so we just record the grab offset here.
-ipcMain.on('pet:grab', () => { const c = screen.getCursorScreenPoint(); grabOff = { dx: c.x - engine.pos.x, dy: c.y - engine.pos.y }; dragStartAt = dragPingAt = Date.now(); engine.grab(); });
+// pet:* messages from a satellite window carry {sat:id}; no argument = the lead, exactly as before
+const satOf = (a) => (a && a.sat ? companions.get(a.sat) : null);
+ipcMain.on('pet:grab', (_e, a) => { const sat = satOf(a); if (sat) return sat.grab(); const c = screen.getCursorScreenPoint(); grabOff = { dx: c.x - engine.pos.x, dy: c.y - engine.pos.y }; dragStartAt = dragPingAt = Date.now(); engine.grab(); });
 ipcMain.on('pet:drag', () => {});                       // no-op: loop drives drag from the global cursor
-ipcMain.on('pet:dragPing', () => { dragPingAt = Date.now(); });   // renderer heartbeat while it believes a drag is live
-ipcMain.on('pet:release', () => { if (engine.dragging) engine.release(); grabOff = null; dragPingAt = 0; });
-ipcMain.on('pet:tap', () => engine.petted());
-ipcMain.on('pet:speaking', (_e, ms) => { engine.holdForSpeech(Date.now(), Number(ms)); });   // a speech line is showing: stand still until it is gone
+ipcMain.on('pet:dragPing', (_e, a) => { const sat = satOf(a); if (sat) return sat.dragPing(); dragPingAt = Date.now(); });   // renderer heartbeat while it believes a drag is live
+ipcMain.on('pet:release', (_e, a) => { const sat = satOf(a); if (sat) return sat.release(); if (engine.dragging) engine.release(); grabOff = null; dragPingAt = 0; });
+ipcMain.on('pet:tap', (_e, a) => { const sat = satOf(a); if (sat) return sat.tap(); engine.petted(); });
+ipcMain.on('pet:speaking', (_e, ms, a) => { const sat = satOf(a); if (sat) return sat.speaking(ms); engine.holdForSpeech(Date.now(), Number(ms)); });   // a speech line is showing: stand still until it is gone
 
+ipcMain.handle('study:cmd', (_e, action, preset) => ({ ok: studyCommand(action, preset), study: studyView() }));
 ipcMain.on('app:openSettings', () => openSettings());
 ipcMain.on('app:toggle', (_e, key) => toggle(key));
 ipcMain.on('app:hideBuddy', () => { hideBuddy(); refreshTrayMenu(); pushState(); });
@@ -745,6 +782,7 @@ function bringBuddyBack() {
     toy.destroy();
     engine.rescue(geo.homePosition(engine.size, engine.displays, screen.getCursorScreenPoint()));
     resetInteraction();
+    companions.forEach((sat, i) => { const h = geo.homePosition(sat.engine.size, sat.engine.displays, screen.getCursorScreenPoint()); sat.rescue({ x: h.x + (i % 2 ? -1 : 1) * sat.engine.size * 1.3 * (1 + (i >> 1)), y: h.y }); });
     petWin._shown = null; petWin._want = null; applyVisibility(); reassertWindowStyles();
     refreshTrayMenu(); pushState(); scheduleAntic();
   } catch (e) { logError('bringBuddyBack', e); }
@@ -768,6 +806,7 @@ function anticBlocked() {
   const s = store.get().settings;
   if (!petWin || petWin.isDestroyed() || userHidden || !petWin._shown) return 'hidden';
   if (fsDisplays.size) return 'fullscreen';   // any covered display: no antics anywhere
+  if (study.focusGate(studyStatus())) return 'study-focus';
   if (s.stayPut || s.reduceMotion || s.paused || !s.antics) return 'quiet';
   engine.settle();
   return engine.canStartScript(true) ? null : 'busy';
@@ -788,6 +827,73 @@ function startAntic(name) {
   return ok;
 }
 
+// --- study timer (pomodoro) ----------------------------------------------------------------------
+// The state machine is src/main/study.js (pure, wall clock). Here: tray menu, tick, calm focus (engine stayPut + no antics/mischief/chatter), celebration, stats.
+const studyTimer = study.createStudy({ now: Date.now, emit: (e) => { try { onStudyEvent(e); } catch (err) { logError('study event', err); } } });
+const studyStatus = () => studyTimer.status();
+const studyFocusing = () => study.isFocusing(studyStatus());
+const studyView = () => ({ ...studyStatus(), stats: { ...study.viewStats(store.get().study, study.dayKey(Date.now())), sparks: Math.floor(Number((store.get().study || {}).sparks) || 0) } });
+const STUDY_CELEBRATE = { wizard: 'starshow', hero: 'powerup', cat: 'chase' };   // each character's best antic; others get sparkles + a happy squish
+function studySay(kind) { petEventOut('say', { kind, force: true }); }
+function sendStudy() { const st = studyStatus(); for (const w of [petWin, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send('study', st); }
+function studyCelebrate(bonus) {
+  petEventOut('popup', { text: '+' + bonus + ' ⚡' }); studySay('studyDone');
+  const name = STUDY_CELEBRATE[store.get().active]; let ok = false;
+  if (name && !fsDisplays.size && !userHidden && petWin && petWin._shown) { try { engine.settle(); ok = engine.canStartScript(true) && startAntic(name); } catch (e) { logError('study celebrate', e); } }
+  if (!ok) { petEventOut('sparkle', { n: 14 }); petEventOut('happy'); }
+}
+function onStudyEvent(e) {
+  if (e.type === 'focusComplete') {
+    const s = store.get();
+    store.set({ sparks: +(s.sparks + e.bonus).toFixed(3), study: study.recordSession(s.study, study.dayKey(Date.now()), e.bonus) });
+    setImmediate(() => { try { studyCelebrate(e.bonus); } catch (err) { logError('study celebrate', err); } });   // after the break has begun, so the buddy is free to play
+    return;
+  }
+  if (e.type === 'breakComplete') { studySay('studyBreak'); return; }
+  if (e.type === 'stopped') { studySay('studyStop'); return; }
+  syncEngineSettings();   // phase / pause / resume: re-evaluate calm mode
+  if (studyFocusing() && engine.state === 'sleep') engine.setState('idle', 300);   // a nap that spans the start of focus ends now
+  if (studyFocusing()) { try { if (mischief) { mischief.stop('study-focus'); mischief.refresh(); } } catch {} }
+  else if (mischief) { try { mischief.refresh(); } catch {} }
+  if (tray && !petGaveUp) tray.setToolTip(studyStatus().phase === 'idle' ? TOOLTIP : TOOLTIP + ' | ' + study.statusLine(studyStatus(), studyView().stats));
+  sendStudy(); pushState(); refreshTrayMenu(); armStudyTick();
+}
+function startStudy(key, over) { if (studyTimer.start(key, over)) studySay('studyStart'); }
+// the one place the tray and the settings Study tab both go through (the renderer's request is validated first)
+function studyCommand(action, preset) {
+  const c = studyView_.parseCommand(action, preset); if (!c) return false;
+  if (c.action === 'start') { startStudy(c.preset); return true; }
+  return !!studyTimer[c.action]();
+}
+// No always-on interval: a one-second timeout that is armed only while a block is running (and re-arms itself). It advances the clock
+// (also finishing a block that ended while the PC slept) and refreshes the ring + tooltip.
+let studyTickT = null;
+function armStudyTick() { const st = studyStatus(); if (!studyTickT && st.phase !== 'idle' && !st.paused) studyTickT = setTimeout(studyTick, 1000); }
+function studyTick() {
+  studyTickT = null;
+  try {
+    studyTimer.tick();
+    const st = studyStatus(); if (st.phase !== 'idle') { sendStudy(); if (tray && !petGaveUp) tray.setToolTip(TOOLTIP + ' | ' + study.statusLine(st, studyView().stats)); }
+  } catch (e) { logError('study tick', e); }
+  armStudyTick();
+}
+function studyMenu() {
+  const st = studyStatus(), idle = st.phase === 'idle';
+  return { label: 'Study timer', submenu: [
+    { label: study.statusLine(st, studyView().stats), enabled: false }, { type: 'separator' },
+    { label: 'Start 25 / 5', click: () => studyCommand('start', '25/5') }, { label: 'Start 50 / 10', click: () => studyCommand('start', '50/10') },
+    { label: st.paused ? 'Resume' : 'Pause', enabled: !idle, click: () => studyCommand(st.paused ? 'resume' : 'pause') },
+    { label: 'Skip', enabled: !idle, click: () => studyCommand('skip') }, { label: 'Stop', enabled: !idle, click: () => studyCommand('stop') },
+  ] };
+}
+// DEV run: pomo:<minutes> = that many minutes of focus and of break (pomo:1 = 1 + 1), pomo:s<seconds> (pomo:s10), pomo:25/5, pomo:50/10, pomo:pause|resume|skip|stop
+function devStudy(arg) {
+  const a = String(arg || '1'), m = /^s(\d+)$/.exec(a), n = /^\d+(\.\d+)?$/.exec(a);
+  if (a === 'pause') studyTimer.pause(); else if (a === 'resume') studyTimer.resume(); else if (a === 'skip') studyTimer.skip(); else if (a === 'stop') studyTimer.stop();
+  else if (study.PRESETS[a]) startStudy(a);
+  else if (m || n) { const ms = m ? +m[1] * 1000 : +a * 60000; startStudy('25/5', { focusMs: ms, breakMs: ms }); }
+}
+
 // --- desktop mischief ----------------------------------------------------------------------------
 // ON by default for everyone since 0.7.1 (store migration v6; an explicit false stays off). Overlay illusions only: see src/main/mischief/manager.js.
 const mischiefActivity = mlogic.createActivity();
@@ -800,7 +906,7 @@ function initMischief() {
   mischiefHost = createHost({ BrowserWindow, desktopCapturer, screen, getPetWin: () => petWin });
   mischief = createManager({
     platform: process.platform, now: Date.now, rand: Math.random, log: (...a) => devLog(...a), engine, host: mischiefHost, activity: mischiefActivity,
-    settings: () => ({ enabled: mischiefEnabled(), freq: store.get().settings.deskMischiefFreq || 'normal' }),
+    settings: () => ({ enabled: mischiefEnabled() && !studyFocusing() && !companions.anyBusy(), freq: store.get().settings.deskMischiefFreq || 'normal' }),
     flags: () => { const s = store.get().settings; return { userHidden, petShown: !!(petWin && !petWin.isDestroyed() && petWin._shown), paused: !!s.paused, stayPut: !!s.stayPut, reduceMotion: !!s.reduceMotion, fullscreen: fsDisplays.size > 0, locked: mfFlags.locked, suspended: mfFlags.suspended }; },
     holdBrain: (ms) => { engine.nextDecision = Math.max(engine.nextDecision || 0, Date.now() + ms); }, makeProbe: () => createProbe(), char: () => store.get().active, cursor: () => devCursor || screen.getCursorScreenPoint(),
     emit: petEventOut, setFx: (fx) => { engine.mischief = fx; }, sleep: (ms) => new Promise(r => setTimeout(r, ms)),
@@ -857,7 +963,7 @@ function devUnlock(id) {
 }
 function devTrigger(name) {
   if (!DEV) return false;
-  const want = name === 'chase' ? 'cat' : 'hero';
+  const want = name === 'chase' ? 'cat' : ['levitate', 'potion', 'blink', 'study', 'starshow'].includes(name) ? 'wizard' : 'hero';
   if (store.get().active !== want) devUnlock(want);
   if (userHidden) showBuddy();
   engine.cancelScript('dev'); resetInteraction();
@@ -877,8 +983,9 @@ function startDevRun() {
       devLog('DEV step', step.cmd, step.arg || '');
       switch (step.cmd) {
         case 'unlock': devUnlock(step.arg); break;
-        case 'chase': case 'landing': case 'patrol': case 'powerup': devLog('started:', devTrigger(step.cmd)); break;
+        case 'chase': case 'landing': case 'patrol': case 'powerup': case 'levitate': case 'potion': case 'blink': case 'study': case 'starshow': devLog('started:', devTrigger(step.cmd)); break;
         case 'snap': devSnapshot(step.arg || ''); break;
+        case 'pomo': devStudy(step.arg); break;   // "pomo:1@2000" = 1 min focus + 1 min break; see devStudy
         case 'flick': { // simulate a hard throw: grab, then release with a given velocity ("vx,vy")
           const [vx, vy] = (step.arg || '2500,-2500').split(',').map(Number);
           engine.cancelScript('dev'); engine.grab(); engine.vel.x = vx; engine.vel.y = vy; engine.release(); break; }
@@ -889,6 +996,7 @@ function startDevRun() {
         case 'set': { const [k, v] = (step.arg || '').split('='); if (k) applySettingsPatch({ [k]: /^-?[0-9]+(\.[0-9]+)?$/.test(v) ? +v : v === 'true' ? true : v === 'false' ? false : v }); break; }
         case 'fsstat': devLog('FSSTAT', { fs: [...fsDisplays], shown: petWin && petWin._shown, opacity: petWin && !petWin.isDestroyed() ? petWin.getOpacity() : null, interactive: petWin && petWin._interactive, pos: { x: Math.round(engine.pos.x), y: Math.round(engine.pos.y) },
           script: engine.script && engine.script.name, anticBlocked: anticBlocked(), prankBlocked: mischief ? mischief.blocked(false) : 'no-manager', world: engine.displays.map(d => d.id), probeAlive: fgProbe._test.state().alive }); break;
+        case 'pair': devLog('pair', step.arg, companions.force(step.arg)); break;   // pair:meet | spook | zap | rescue (needs showAll and the right buddies)
         case 'antic': onAnticTimer(); break;                                  // the real scheduled path (gates included), not the forced dev trigger
         case 'prankgo': if (mischief) mischief.start({}).then(r => devLog('prankgo', r && r.status, r && r.reason)); break;   // real path: respects every gate
         case 'mstop': if (mischief) mischief.stop('stopped'); break;
@@ -959,4 +1067,4 @@ app.on('ready', () => {
 });
 app.on('window-all-closed', () => { /* keep running in tray */ });
 app.on('activate', () => openSettings());   // macOS: clicking the Dock icon opens Shop & Settings
-app.on('before-quit', () => { app.isQuiting = true; clearTimeout(anticTimer); try { if (mischief) mischief.stop('quit'); if (mischiefHost) mischiefHost.close(); killProbes(); } catch {} try { toy.destroy(); } catch {} try { fgProbe.stop(); } catch {} store.saveNow(); });
+app.on('before-quit', () => { app.isQuiting = true; clearTimeout(anticTimer); try { companions.destroyAll(); } catch {} try { if (mischief) mischief.stop('quit'); if (mischiefHost) mischiefHost.close(); killProbes(); } catch {} try { toy.destroy(); } catch {} try { fgProbe.stop(); } catch {} store.saveNow(); });

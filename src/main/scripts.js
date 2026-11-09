@@ -22,7 +22,7 @@ function anticRange(mis) {
   }
   return [ANCHORS[3][1], ANCHORS[3][2]];
 }
-const INTERVALS = { cat: anticRange(25), hero: anticRange(25) };   // kept for callers that only want the default range
+const INTERVALS = { cat: anticRange(25), hero: anticRange(25), wizard: anticRange(25) };   // kept for callers that only want the default range
 function nextAnticDelay(charId, R = Math.random, mis = 25) {
   const [a, b] = anticRange(mis);
   return Math.round((a + R() * (b - a)) * 60000);
@@ -343,11 +343,127 @@ function ghostSwoop() {
   };
 }
 
+// ---------------------------------------------------------------- wizard (Merlo): sprite-only spells
+// Each spell is a list of timed steps { d seconds, st sprite state, on(e) once at the start, f(e, k 0..1, dt) every frame }.
+// Self effects (shrink / rainbow / fade) ride the renderer's sc / hue / alpha path via e.mischief, always reset on cancel or done.
+const wfx = (e, o) => { e.mischief = Object.assign({ sc: 1, hue: 0, alpha: 1, _w: 1 }, o); };
+const wclear = (e) => { if (e.mischief && e.mischief._w) e.mischief = null; };
+function spell(name, maxMs, plan, R = Math.random) {
+  let D, S, steps, i, pt, ctx;
+  const begin = (e) => { pt = 0; const s = steps[i]; e.setState(s.st, 1e9); if (s.on) s.on(e); };
+  return {
+    name, maxMs,
+    init(e) {
+      D = e.currentDisplay(); S = e.size;
+      ctx = { D, S, e, y0: e.floorAt(e.pos.x), x0: e.pos.x, R, dir: (e.pos.x + S / 2 - D.x0) < (D.x1 - e.pos.x - S / 2) ? 1 : -1 };
+      e.facing = ctx.dir; steps = plan(ctx); i = 0; begin(e);
+    },
+    update(e, dt) {
+      pt += dt; const s = steps[i];
+      if (s.f) s.f(e, clamp(pt / s.d, 0, 1), dt);
+      if (pt >= s.d) { i++; if (i >= steps.length) return true; begin(e); }
+      e.pos.x = clamp(e.pos.x, D.x0, D.x1 - S);
+      return false;
+    },
+    cancel(e) { wclear(e); },
+  };
+}
+const pace = (per) => { let a = 0; return (dt, fn) => { a += dt; if (a >= per) { a = 0; fn(); } }; };
+const poof = (e) => { ev(e, 'sparkle', { n: 12 }); ev(e, 'dust'); };
+const gnd = (e) => { e.pos.y = e.floorAt(e.pos.x); };
+
+// levitate: raises itself ~1.5 sprite heights, hovers bobbing and drifting, floats gently back down.
+function wizLevitate(R = Math.random) {
+  return spell('levitate', 12000, (c) => {
+    const { e, S, D } = c; const top = Math.max(D.y0 + 4, c.y0 - S * 1.5); let yh = top, xs = c.x0; const sp = pace(0.6);
+    return [
+      { d: 0.7, st: 'cast', on: () => { ev(e, 'sparkle', { n: 8 }); ev(e, 'popup', { text: 'Up we go!' }); }, f: gnd },
+      { d: 1.6, st: 'fly', on: () => ev(e, 'launch'), f: (e, k, dt) => { e.pos.y = c.y0 + (top - c.y0) * ease(k); sp(dt, () => ev(e, 'sparkle', { n: 3 })); } },
+      { d: 4.2, st: 'fly', on: () => { xs = e.pos.x; }, f: (e, k, dt) => { e.pos.y = top + Math.sin(k * 6 * Math.PI) * S * 0.08; e.pos.x = xs + c.dir * S * 1.2 * ease(k); sp(dt, () => ev(e, 'sparkle', { n: 3 })); } },
+      { d: 2.0, st: 'fly', on: () => { yh = e.pos.y; }, f: (e, k, dt) => { e.pos.y = yh + (e.floorAt(e.pos.x) - yh) * ease(k); sp(dt, () => ev(e, 'sparkle', { n: 2 })); } },
+      { d: 0.8, st: 'happy', on: () => { gnd(e); ev(e, 'land', { vy: 300 }); ev(e, 'dust'); }, f: gnd },
+    ];
+  }, R);
+}
+
+// potion: swigs a bottle, then a random self effect: shrink / rainbow / fade out / frog. Always ends normal.
+const POTIONS = ['shrink', 'rainbow', 'invisible', 'frog'];
+function wizPotion(R = Math.random) {
+  const effect = POTIONS[Math.min(POTIONS.length - 1, Math.floor(R() * POTIONS.length))];
+  const s = spell('potion', 12000, (c) => {
+    const { e, S } = c; const sp = pace(0.35);
+    const drink = { d: 1.3, st: 'drink', on: () => ev(e, 'popup', { text: 'Glug glug!' }), f: gnd };
+    const end = { d: 0.9, st: 'happy', on: () => { ev(e, 'sparkle', { n: 8 }); ev(e, 'popup', { text: 'Ta-da!' }); }, f: gnd };
+    const hop = (turn) => ({ d: 0.5, st: 'frog', on: () => { ev(e, 'hop'); if (turn) { c.dir = -c.dir; e.facing = c.dir; } c.hx = e.pos.x; }, f: (e, k) => { e.pos.x = c.hx + c.dir * S * 0.45 * k; e.pos.y = e.floorAt(e.pos.x) - 4 * S * 0.32 * k * (1 - k); } });
+    const mid = {
+      shrink: [
+        { d: 0.6, st: 'surprised', on: () => ev(e, 'popup', { text: 'Squeak!' }), f: (e, k) => { gnd(e); wfx(e, { sc: 1 - 0.65 * ease(k) }); } },
+        { d: 3.2, st: 'idle', f: (e, k, dt) => { gnd(e); wfx(e, { sc: 0.35 }); sp(dt, () => ev(e, 'sparkle', { n: 2 })); } },
+        { d: 0.6, st: 'surprised', f: (e, k) => { gnd(e); wfx(e, { sc: 0.35 + 0.65 * ease(k) }); } }],
+      rainbow: [
+        { d: 4.5, st: 'happy', on: () => ev(e, 'popup', { text: 'Rainbow!' }), f: (e, k, dt) => { gnd(e); wfx(e, { hue: (k * 1080) % 360 }); sp(dt, () => ev(e, 'sparkle', { n: 3 })); } }],
+      invisible: [
+        { d: 0.7, st: 'surprised', on: () => ev(e, 'popup', { text: 'Where am I?' }), f: (e, k) => { gnd(e); wfx(e, { alpha: 1 - 0.85 * ease(k) }); } },
+        { d: 2.8, st: 'idle', f: (e) => { gnd(e); wfx(e, { alpha: 0.15 }); } },
+        { d: 0.3, st: 'surprised', on: () => poof(e), f: (e, k) => { gnd(e); wfx(e, { alpha: 0.15 + 0.85 * k }); } }],
+      frog: [
+        { d: 0.6, st: 'surprised', on: () => { poof(e); ev(e, 'popup', { text: 'Ribbit!' }); }, f: gnd },
+        hop(false), hop(true),
+        { d: 0.4, st: 'frog', f: gnd },
+        { d: 0.4, st: 'surprised', on: () => poof(e), f: gnd }],
+    }[effect];
+    return [drink, ...mid, end];
+  }, R);
+  s.effect = effect; return s;
+}
+
+// blink: casts, poofs out, reappears a short hop away on the same display and floor, poofs back in.
+function wizBlink(R = Math.random) {
+  return spell('blink', 8000, (c) => {
+    const { e, S, D } = c;
+    return [
+      { d: 1.0, st: 'cast', on: () => ev(e, 'popup', { text: 'Poof!' }), f: gnd },
+      { d: 0.5, st: 'surprised', on: () => { poof(e); wfx(e, { alpha: 0 }); }, f: (e) => { gnd(e); wfx(e, { alpha: 0 }); } },
+      { d: 1.4, st: 'idle', on: () => {
+        const room = c.dir > 0 ? D.x1 - S - e.pos.x : e.pos.x - D.x0, dist = Math.min(room, S * (2 + c.R() * 3));
+        e.pos.x += c.dir * dist; e.facing = -c.dir; gnd(e); }, f: (e) => { gnd(e); wfx(e, { alpha: 0 }); } },
+      { d: 0.8, st: 'surprised', on: () => { poof(e); wclear(e); ev(e, 'popup', { text: 'Zap!' }); }, f: gnd },
+      { d: 1.5, st: 'happy', f: gnd },
+    ];
+  }, R);
+}
+
+// study: sits with the spellbook, +1 WIS, a page sparkle now and then.
+function wizStudy(R = Math.random) {
+  return spell('study', 10000, (c) => {
+    const { e } = c; let a = 0;
+    return [
+      { d: 1.8, st: 'read', on: () => ev(e, 'say', { kind: 'study' }), f: gnd },
+      { d: 1.2, st: 'read', on: () => { ev(e, 'popup', { text: '+1 WIS' }); ev(e, 'sparkle', { n: 6 }); }, f: gnd },
+      { d: 3.4, st: 'read', f: (e, k, dt) => { gnd(e); a += dt; if (a > 1.4) { a = 0; ev(e, 'sparkle', { n: 3 }); } } },
+      { d: 0.9, st: 'happy', on: () => ev(e, 'sparkle', { n: 6 }), f: gnd },
+    ];
+  }, R);
+}
+
+// starshow: mini fireworks of coloured stars above the hat, then a bow.
+function wizStarshow(R = Math.random) {
+  return spell('starshow', 8000, (c) => {
+    const { e } = c; const burst = () => ({ d: 0.65, st: 'cast2', on: () => ev(e, 'burst', { n: 14 }), f: gnd });
+    return [
+      { d: 0.7, st: 'cast2', on: () => ev(e, 'popup', { text: 'Abracadabra!' }), f: gnd },
+      burst(), burst(), burst(), burst(),
+      { d: 1.3, st: 'happy', on: () => { ev(e, 'burst', { n: 24 }); ev(e, 'popup', { text: 'Ta-da!' }); }, f: gnd },
+    ];
+  }, R);
+}
+
 const ANTICS = { cat: { chase }, hero: { landing: heroLanding, patrol: heroPatrol, powerup: heroPowerUp },
-  blob: { wallscale: blobWallScale, spree: blobSpree }, ghost: { wallphase: ghostWallPhase, swoop: ghostSwoop } };
-const ANTIC_NAMES = { cat: ['chase'], hero: ['landing', 'patrol', 'powerup'], blob: ['wallscale', 'spree'], ghost: ['wallphase', 'swoop'] };
+  blob: { wallscale: blobWallScale, spree: blobSpree }, ghost: { wallphase: ghostWallPhase, swoop: ghostSwoop },
+  wizard: { levitate: wizLevitate, potion: wizPotion, blink: wizBlink, study: wizStudy, starshow: wizStarshow } };
+const ANTIC_NAMES = { cat: ['chase'], hero: ['landing', 'patrol', 'powerup'], blob: ['wallscale', 'spree'], ghost: ['wallphase', 'swoop'], wizard: ['levitate', 'potion', 'blink', 'study', 'starshow'] };
 // the hero flies a lot: patrol is the favourite
-const ANTIC_WEIGHTS = { hero: { patrol: 0.55, landing: 0.28, powerup: 0.17 } };
+const ANTIC_WEIGHTS = { hero: { patrol: 0.55, landing: 0.28, powerup: 0.17 }, wizard: { levitate: 0.25, potion: 0.3, blink: 0.15, study: 0.15, starshow: 0.15 } };
 // name optional (weighted random pick); returns null for characters with no antics
 function makeScript(charId, name, R = Math.random) {
   const set = ANTICS[charId]; if (!set) return null;
@@ -360,4 +476,4 @@ function makeScript(charId, name, R = Math.random) {
   return set[pick](R);
 }
 
-module.exports = { nextAnticDelay, anticRange, createAnticPlanner, makeScript, chase, heroLanding, heroPatrol, heroPowerUp, blobWallScale, blobSpree, ghostWallPhase, ghostSwoop, INTERVALS, ANTIC_NAMES, walkSpeed };
+module.exports = { nextAnticDelay, anticRange, createAnticPlanner, makeScript, chase, heroLanding, heroPatrol, heroPowerUp, blobWallScale, blobSpree, ghostWallPhase, ghostSwoop, wizLevitate, wizPotion, wizBlink, wizStudy, wizStarshow, INTERVALS, ANTIC_NAMES, walkSpeed };

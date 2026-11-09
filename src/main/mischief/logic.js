@@ -161,7 +161,9 @@ function sameSig(a, b) {
 }
 
 // ------------------------------------------------------------------ picking
-// gags: { id: { weight, find(model, env) -> targets|null, needsText } }. Returns [{id, targets}] shuffled by weight, recent ones last.
+// gags: { id: { weight, find(model, env) -> targets|null, needsText, spell } }. Returns [{id, targets}] shuffled by weight, recent ones last.
+// The wizard's spells (spell: true) take SPELL_SHARE of the weight whenever both spells and ordinary gags are possible (about 80% of the picks), the ordinary ones keep the rest.
+const SPELL_SHARE = 0.8;
 function candidates(gags, model, env, recent, R_ = Math.random, only) {
   const out = [];
   for (const id of Object.keys(gags)) {
@@ -171,8 +173,13 @@ function candidates(gags, model, env, recent, R_ = Math.random, only) {
     if (!t) continue;
     let boost = 1; try { if (g.boost) boost = Math.max(0.1, +g.boost(model) || 1); } catch { boost = 1; }
     const w = (g.weight || 1) * boost * (recent && recent.includes(id) ? 0.15 : 1);
-    out.push({ id, targets: t, key: -Math.log(1 - R_()) / w });   // weighted random order (exponential race)
+    out.push({ id, targets: t, w, u: R_(), spell: !!g.spell });
   }
+  if (env && env.char === 'wizard' && !only) {
+    const sw = out.filter(c => c.spell).reduce((a, c) => a + c.w, 0), ow = out.filter(c => !c.spell).reduce((a, c) => a + c.w, 0);
+    if (sw > 0 && ow > 0) { const f = SPELL_SHARE / (1 - SPELL_SHARE) * ow / sw; for (const c of out) if (c.spell) c.w *= f; }
+  }
+  for (const c of out) { c.key = -Math.log(1 - c.u) / c.w; delete c.u; }   // weighted random order (exponential race)
   return out.sort((a, b) => a.key - b.key);
 }
 
@@ -186,7 +193,7 @@ function overlayBox(area, bounds, margin = 160) {
 }
 
 module.exports = { FIRST_CHAOS_MS, overlayBox, R, fromArr, right, bottom, center, inflate, intersects, containsPt, union, distToRect, sameRect, within, physToDip, cropFor, displayAt, layoutKey,
-  ALLOWED_APPS, appAllowed, buildModel, desktopRows, desktopCols, RUN_MIN, groupLines, FREQ, nextDelay, createActivity, blockedReason, CAP_MS, abortReason, sameSig, candidates };
+  SPELL_SHARE, ALLOWED_APPS, appAllowed, buildModel, desktopRows, desktopCols, RUN_MIN, groupLines, FREQ, nextDelay, createActivity, blockedReason, CAP_MS, abortReason, sameSig, candidates };
 
 // Dev restore check: compares the same screen areas before and after a prank (bitmaps of a whole display, physical pixels).
 // Returns mean absolute channel difference (0..1), percent of pixels that differ by more than 24/255 in any channel, and the largest channel difference.

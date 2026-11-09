@@ -440,6 +440,61 @@
         "Nom! Heroically nom!",
         "My muscles thank you!",
         "Snack of champions!"]
+    },
+
+    // Merlo: wise, slightly silly wizard. Spells, spellbooks and revision as magic.
+    wizard: {
+      greet: [
+        "Merlo the Wise, at your service!",
+        "Behold! A wizard has entered the library.",
+        "Spells ready. Brain ready. Begin!",
+        "Today's spell: Focus. Cast it often."],
+      idle: [
+        "Revision is just a spell you cast daily.",
+        "Abracadabra! Your essay is now 10% better.",
+        "A wise wizard drinks water. Hydrate!",
+        "Magic is mostly practice. So is maths.",
+        "I turned my notes into flashcards. Alchemy!",
+        "Every great spell starts with a rough draft.",
+        "Hocus pocus. Hocus focus! Get it?",
+        "I once cast Summarise. It took one page.",
+        "Spaced repetition: the oldest magic there is.",
+        "Even wizards check the mark scheme.",
+        "My wand is a pen. My pen is mighty.",
+        "Slow brewing makes the best potions. And grades.",
+        "I foresee a break in your near future.",
+        "Wisdom is just notes you actually reread.",
+        "Zap! Distraction banished. You're welcome.",
+        "Ten minutes of focus beats an hour of fizzing.",
+        "A cluttered desk is a cursed desk.",
+        "Past papers are the true crystal ball."],
+      pet: [
+        "Ooh, a pat! Minor blessing granted.",
+        "Gentle! The hat is enchanted.",
+        "Mmm. Plus one to morale.",
+        "Your kindness has been noted in the book.",
+        "Sparkle sparkle!"],
+      sleep: [
+        "zzz... dreaming of perfect spells...",
+        "*snores in ancient runes*",
+        "Hat on. Candle out. zzz...",
+        "zzz... one more chapter... zzz..."],
+      study: [
+        "To the spellbook! Knowledge awaits!",
+        "A page a day keeps the dragon away.",
+        "Read it twice. Then cast it from memory.",
+        "Chapter by chapter, the tower rises.",
+        "Teach it to a rubber duck. Ancient method.",
+        "Even a wizard starts with chapter one.",
+        "Copy the hard bits. Then hide them.",
+        "Questions are just riddles in disguise.",
+        "Brew a plan, then a cup of tea.",
+        "Stay with it. The spell is almost cast!"],
+      fed: [
+        "A feast! The wizard approves.",
+        "Delicious. Restoring mana!",
+        "Nom! Plus one to wisdom.",
+        "Cauldron cake? Yes please!"]
     }
   };
 
@@ -460,11 +515,42 @@
       "Past midnight. A glass of water would be nice."]
   };
 
+  // Study timer lines (pomodoro): start of a focus block, focus done, break over, stopped early. Short, no dashes.
+  const STUDY = {
+    blob: {
+      studyStart: ["Focus time! I'll be quiet. Promise.", "Let's go. I'll sit right here.", "Shh mode on. You've got this."],
+      studyDone: ["Break time! You earned it.", "Done! Squish squish, well done!", "You did it! Go stretch!"],
+      studyBreak: ["Ready for another round?", "Break's over. One more go?", "Back at it? I'm ready!"],
+      studyStop: ["Okay, we stopped. Tomorrow's a new go.", "No worries. We can start again."] },
+    ghost: {
+      studyStart: ["I shall haunt quietly. Focus.", "Boo-less mode. Go on.", "I'll float and not say a thing."],
+      studyDone: ["Break time! You earned it.", "Spooky good work. Rest now.", "Done! Even I'm impressed."],
+      studyBreak: ["Ready for another round?", "The break fades. Again?", "Time to haunt the books again?"],
+      studyStop: ["Stopped early. I won't tell.", "Fine, we rest. The books wait."] },
+    cat: {
+      studyStart: ["I'll nap near the keyboard. Quietly.", "Focus. I'm watching, silently.", "Quiet paws. Go on, study."],
+      studyDone: ["Break time! You earned it.", "Not bad, human. Treats?", "Done. Go stretch like a cat."],
+      studyBreak: ["Ready for another round?", "Break over. Back to it, human.", "One more round? I'll supervise."],
+      studyStop: ["Stopped? Fine. Naps are valid.", "Okay. The timer will wait."] },
+    hero: {
+      studyStart: ["Mission begins. Stay focused!", "Silent patrol mode. Go, hero!", "Eyes on the books, soldier!"],
+      studyDone: ["Break time! You earned it.", "Mission complete! KAPOW!", "Victory! Take five, champ!"],
+      studyBreak: ["Ready for another round?", "Rest over. Suit up again?", "Next mission? I'm in!"],
+      studyStop: ["Mission aborted. We regroup.", "Retreat is a tactic. Go again soon."] },
+    wizard: {
+      studyStart: ["The tome opens. Focus now.", "Silence, scholar. The spell is study.", "I shall read beside you."],
+      studyDone: ["Break time! You earned it.", "A fine spell of focus!", "The stars applaud. Rest now."],
+      studyBreak: ["Ready for another round?", "The pause ends. Read on?", "Shall we open the tome again?"],
+      studyStop: ["The spell is broken. Try again soon.", "Closed the tome. Another day."] },
+  };
+  const STUDY_KINDS = ['studyStart', 'studyDone', 'studyBreak', 'studyStop'];
+
   const NIGHT_FROM = 23, NIGHT_TO = 5;
   const isNight = (hour) => typeof hour === 'number' && (hour >= NIGHT_FROM || hour < NIGHT_TO);
 
   // Pool for (character, kind). Unknown kind falls back to idle, unknown character to blob.
   function getPool(charId, kind, hour) {
+    if (STUDY_KINDS.includes(kind)) return { kind, pool: (STUDY[charId] || STUDY.blob)[kind], night: false };
     const voice = LINES[charId] || LINES.blob;
     const k = voice[kind] ? kind : 'idle';
     let pool = voice[k];
@@ -511,6 +597,6 @@
     return { pick };
   }
 
-  const api = { LINES, SHARED, KINDS, MAX_LEN, getPool, createPicker, isNight };
+  const api = { LINES, SHARED, STUDY, STUDY_KINDS, KINDS, MAX_LEN, getPool, createPicker, isNight };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SBLines = api;
 })(typeof window !== 'undefined' ? window : this);

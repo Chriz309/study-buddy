@@ -3,15 +3,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { LINES, SHARED, MAX_LEN, getPool, createPicker } = require('../src/renderer/lines');
 
-const CHARS = ['blob', 'ghost', 'cat', 'hero'];
+const CHARS = ['blob', 'ghost', 'cat', 'hero', 'wizard'];
 const MIN = { idle: 40, study: 25, pet: 12, sleep: 8, fed: 8, greet: 6 };
-const NAMES = { blob: ['blob'], ghost: ['boo'], cat: ['pib'], hero: ['captain cram', 'cram'] };
+const NAMES = { blob: ['blob'], ghost: ['boo'], cat: ['pib'], hero: ['captain cram', 'cram'], wizard: ['merlo'] };
+const WIZ_MIN = { idle: 15, study: 8, pet: 4, sleep: 3, fed: 3, greet: 3 };   // Merlo has a compact, hand-picked set
 
 // small deterministic RNG (mulberry32)
 const rng = (seed) => () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 
 test('every character has enough lines of every kind', () => {
-  for (const c of CHARS) for (const [k, n] of Object.entries(MIN)) {
+  for (const c of CHARS) for (const [k, n] of Object.entries(c === 'wizard' ? WIZ_MIN : MIN)) {
     assert.ok(LINES[c][k].length >= n, `${c}.${k} has ${LINES[c][k].length}, needs ${n}`);
   }
 });
@@ -21,6 +22,13 @@ test('all lines fit the bubble and are non-empty strings', () => {
   for (const c of CHARS) for (const arr of Object.values(LINES[c])) all.push(...arr);
   all.push(...SHARED.idle, ...SHARED.night);
   for (const l of all) { assert.equal(typeof l, 'string'); assert.ok(l.trim().length > 0); assert.ok(l.length <= MAX_LEN, `too long (${l.length}): ${l}`); }
+});
+
+test('no em or en dashes in any speech line (project rule)', () => {
+  const all = []; for (const c of CHARS) for (const arr of Object.values(LINES[c])) all.push(...arr);
+  all.push(...SHARED.idle, ...SHARED.night);
+  for (const l of all) assert.ok(!/[–—]/.test(l), l);
+  const w = Object.values(LINES.wizard).flat(); assert.ok(w.length >= 15 && w.length <= 60, 'wizard line count ' + w.length);
 });
 
 test('no duplicates inside any pool, including shared additions', () => {

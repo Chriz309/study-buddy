@@ -9,7 +9,7 @@ const { createManager } = require('../src/main/mischief/manager');
 const { LAYOUTS, freshEngine, rng } = require('./helpers');
 
 const SIZE = 100, LAYOUT = LAYOUTS.single, DISP = LAYOUT[0];
-const CHARS = { blob: { move: 'walk', gait: 'hop' }, cat: { move: 'walk', gait: 'step' }, hero: { move: 'walk', gait: 'step' }, ghost: { move: 'float', gait: 'hop' } };
+const CHARS = { blob: { move: 'walk', gait: 'hop' }, cat: { move: 'walk', gait: 'step' }, hero: { move: 'walk', gait: 'step' }, wizard: { move: 'walk', gait: 'step' }, ghost: { move: 'float', gait: 'hop' } };
 
 // 10 simulated minutes at 60 fps. Mirrors main.js: the antic planner decides when, a walking sprite is settled, a busy one retries in 8 s.
 function simulate(charId, mischief, seed, minutes = 10) {
@@ -58,10 +58,11 @@ test('blob at Mischief 100% climbs or peeks at least 5 times in 10 minutes; at 0
   }
 });
 
-test('cat stays wall-free but jumps and zooms more at high mischief', () => {
+test('cat stays wall-free, jumps more at high mischief, and never sprints', () => {
   const hi = simulate('cat', 100, 4), lo = simulate('cat', 0, 4);
   assert.equal(hi.counts.climb + hi.counts.peek + hi.counts.toWindow, 0, 'cat never wall-climbs');
-  assert.ok(hi.counts.zoom >= 5 && hi.counts.jump > lo.counts.jump && hi.counts.zoom > lo.counts.zoom, JSON.stringify([hi.counts, lo.counts]));
+  assert.ok(hi.counts.jump > lo.counts.jump, JSON.stringify([hi.counts, lo.counts]));
+  assert.equal(hi.counts.zoom + lo.counts.zoom, 0, 'no random sprints (normal walking pace only)');
 });
 
 for (const id of Object.keys(CHARS)) {

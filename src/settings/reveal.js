@@ -2,7 +2,7 @@
 (function () {
   const q = new URLSearchParams(location.search);
   const id = q.get('id') || '', name = q.get('name') || 'New buddy', rarity = (q.get('rarity') || '').toLowerCase();
-  const EMOJI = { blob: '🫧', ghost: '👻', cat: '🐱', chirp: '🐤', quack: '🦆', fox: '🦊', octo: '🐙', ember: '🐲', hero: '🦸' };
+  const EMOJI = { blob: '🫧', ghost: '👻', cat: '🐱', chirp: '🐤', quack: '🦆', fox: '🦊', octo: '🐙', ember: '🐲', hero: '🦸', wizard: '🧙' };
   const RAR = { common:['Common','#9aa4b2'], uncommon:['Uncommon','#54e0a0'], rare:['Rare','#53b9ff'], unique:['Unique','#c08bff'], legendary:['Legendary','#ffb43f'] };
 
   // egg art (same in both clipped halves so they form one egg)
@@ -40,6 +40,19 @@
     stage.appendChild(s);
   }
 
+  // legendary pulls get the gold treatment: rotating rays, a hotter glow and a bigger shower of gold sparks
+  if (rarity === 'legendary') {
+    stage.classList.add('legend');
+    const gold = ['#ffd23f', '#fff1a8', '#ffb43f', '#ffffff'];
+    for (let i = 0; i < 26; i++) {
+      const s = document.createElement('div'); s.className = 'spark';
+      const a = (i / 26) * Math.PI * 2 + Math.random() * 0.2, r = 150 + Math.random() * 130;
+      s.style.setProperty('--dx', Math.cos(a) * r + 'px'); s.style.setProperty('--dy', Math.sin(a) * r + 'px');
+      s.style.background = gold[i % gold.length]; s.style.boxShadow = '0 0 8px #ffd23f'; s.style.transitionDelay = (Math.random() * 0.25) + 's';
+      stage.appendChild(s);
+    }
+  }
+
   let done = false;
   function finish() { if (done) return; done = true; stage.classList.add('out'); setTimeout(() => { try { window.buddy.hatchDone(); } catch {} }, 650); }
 
@@ -49,7 +62,7 @@
     T(650, 'wobble');
     T(1750, 'crack');
     T(2350, 'hatch');
-    setTimeout(finish, 5200);
+    setTimeout(finish, rarity === 'legendary' ? 6200 : 5200);
   });
   window.addEventListener('pointerdown', finish);   // click to skip
 })();

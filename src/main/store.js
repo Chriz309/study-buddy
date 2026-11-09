@@ -12,6 +12,7 @@ const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { DEFAULTS, GUMBALL_COST } = require('../shared/catalog');
+const { normalizeCosmetics } = require('../shared/wardrobe');
 
 const FILE = () => path.join(app.getPath('userData'), 'buddy-save.json');
 const BAK = () => FILE() + '.bak';
@@ -53,6 +54,7 @@ function load() {
   if (!saved) { try { saved = readSave(BAK()); } catch { saved = null; } }
   state = saved ? deepMerge(DEFAULTS, saved) : JSON.parse(JSON.stringify(DEFAULTS));
   if (!Array.isArray(state.owned)) state.owned = ['blob'];
+  state.cosmetics = normalizeCosmetics(state.cosmetics);   // Wardrobe: the old empty `{}` becomes { owned: [], equipped: {} }; junk and stale ids are dropped
   // guarantee the default character is always owned
   if (!state.owned.includes('blob')) state.owned.unshift('blob');
 

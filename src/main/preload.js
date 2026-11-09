@@ -5,19 +5,23 @@ contextBridge.exposeInMainWorld('buddy', {
   getState:      () => ipcRenderer.invoke('state:get'),
   onState:       (cb) => ipcRenderer.on('state', (_e, s) => cb(s)),
   onSparks:      (cb) => ipcRenderer.on('sparks', (_e, n) => cb(n)),
+  onStudy:       (cb) => ipcRenderer.on('study', (_e, s) => cb(s)),   // study timer tick: { phase, paused, remainingMs, totalMs }
+
+  studyCmd:      (action, preset) => ipcRenderer.invoke('study:cmd', action, preset),   // start(preset '25/5'|'50/10') | pause | resume | skip | stop, validated in main
 
   // pet rendering stream (per-display overlay)
   onPet:         (cb) => ipcRenderer.on('pet', (_e, p) => cb(p)),
   onPetEvent:    (cb) => ipcRenderer.on('petEvent', (_e, e) => cb(e)),
 
   // pet input (coords local to this window's display)
-  petGrab:       () => ipcRenderer.send('pet:grab'),
+  // an optional `sat` (character id) addresses a multi-pet satellite window; without it the message is for the lead, as before
+  petGrab:       (sat) => ipcRenderer.send('pet:grab', sat ? { sat } : undefined),
   petDrag:       (x, y) => ipcRenderer.send('pet:drag', { x, y }),
-  petDragPing:   () => ipcRenderer.send('pet:dragPing'),
-  petRelease:    () => ipcRenderer.send('pet:release'),
-  petTap:        () => ipcRenderer.send('pet:tap'),
-  petSpeaking:   (ms) => ipcRenderer.send('pet:speaking', ms),
-  petSeen:       () => ipcRenderer.send('pet:seen'),
+  petDragPing:   (sat) => ipcRenderer.send('pet:dragPing', sat ? { sat } : undefined),
+  petRelease:    (sat) => ipcRenderer.send('pet:release', sat ? { sat } : undefined),
+  petTap:        (sat) => ipcRenderer.send('pet:tap', sat ? { sat } : undefined),
+  petSpeaking:   (ms, sat) => ipcRenderer.send('pet:speaking', ms, sat ? { sat } : undefined),
+  petSeen:       (sat) => ipcRenderer.send('pet:seen', sat ? { sat } : undefined),
 
   // mutations (settings window)
   patchSettings: (patch) => ipcRenderer.invoke('settings:patch', patch),
@@ -31,6 +35,8 @@ contextBridge.exposeInMainWorld('buddy', {
   hatchDone:     () => ipcRenderer.send('hatch:done'),
   earn:          (n) => ipcRenderer.invoke('buddy:earn', n),
   feed:          (id) => ipcRenderer.invoke('buddy:feed', id),
+  buyCosmetic:   (id) => ipcRenderer.invoke('cosmetic:buy', id),
+  equipCosmetic: (charId, slot, id) => ipcRenderer.invoke('cosmetic:equip', charId, slot, id),
 
   // app actions
   openSettings:  () => ipcRenderer.send('app:openSettings'),

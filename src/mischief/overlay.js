@@ -2,9 +2,13 @@
    covers each target with a patch sampled from around it, then animates the crop as a prop. Closing this window IS the restore. */
 (function () {
   'use strict';
-  const cv = document.getElementById('c'), g = cv.getContext('2d'), K = window.MKIT, G = window.GAGS.G;
+  const cv = document.getElementById('c'), g = cv.getContext('2d'), K = window.MKIT, G = Object.assign({}, window.GAGS.G, (window.SPELLS && window.SPELLS.G) || {});
   let scene = null, T = {}, raf = 0, startAt = 0, running = false;
   const load = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+
+  // spell art (art-spells.js defines SPELL_ART as data URIs); a missing or broken image just leaves its fallback shape in place
+  let artP = null;
+  const loadArt = () => artP || (artP = Promise.all(Object.keys(window.SPELL_ART || {}).map(async (k) => { try { return [k, await load(window.SPELL_ART[k])]; } catch { return null; } })).then((l) => { window.SPELL_IMG = Object.fromEntries(l.filter(Boolean)); }));
 
   // patch: blend of the four edge strips just outside the target (inverse-distance weights): reads as "what was behind it"
   function makePatch(img, c) {
@@ -42,7 +46,7 @@
   }
   window.mischief.onScene(async (s) => {
     try {
-      scene = s; const dpr = Math.max(1, window.devicePixelRatio || 1);
+      scene = s; await loadArt(); const dpr = Math.max(1, window.devicePixelRatio || 1);
       cv.width = Math.round(s.w * dpr); cv.height = Math.round(s.h * dpr); g.setTransform(dpr, 0, 0, dpr, -s.ox * dpr, -s.oy * dpr); g.imageSmoothingEnabled = true;
       for (const k of Object.keys(s.crops)) { const c = s.crops[k], img = await load(c.png), m = makePatch(img, c); T[k] = { rect: c.rect, img: m.img, patch: m.patch, lum: m.lum }; c.png = null; }
       paint(0); window.mischief.ready();

@@ -11,12 +11,14 @@
 
   // ---- keyframe sequencing for the sprite: each key holds the state used for the segment that STARTS at it
   function Seq(x, y) {
-    const ks = []; let t = 0, cx = x, cy = y;
+    const ks = []; let t = 0, cx = x, cy = y, fx = {};
     const o = {
       get t() { return t; }, get x() { return cx; }, get y() { return cy; },
-      to(ms, nx, ny, s, opt) { ks.push(Object.assign({ t, x: cx, y: cy, s }, opt)); t += ms; cx = nx; cy = ny; return o; },
+      // set({ sc, hue, alpha }): sticky look values for the keys created from now on. A key's value holds at the START of its segment and eases to the next key's value.
+      set(v) { Object.assign(fx, v); return o; },
+      to(ms, nx, ny, s, opt) { ks.push(Object.assign({ t, x: cx, y: cy, s }, fx, opt)); t += ms; cx = nx; cy = ny; return o; },
       hold(ms, s, opt) { return o.to(ms, cx, cy, s, opt); },
-      end() { ks.push({ t, x: cx, y: cy, s: 'idle', f: ks.length ? ks[ks.length - 1].f : 1 }); return ks; },
+      end() { ks.push({ t, x: cx, y: cy, s: 'idle', f: ks.length ? ks[ks.length - 1].f : 1, sc: 1, alpha: 1, hue: fx.hue && fx.hue % 360 === 0 ? fx.hue : 0 }); return ks; },
     };
     return o;
   }
@@ -25,7 +27,8 @@
     while (i < ks.length - 2 && t >= ks[i + 1].t) i++;
     const a = ks[i], b = ks[Math.min(i + 1, ks.length - 1)], k = b.t > a.t ? cl((t - a.t) / (b.t - a.t), 0, 1) : 1, kk = a.lin ? k : sm(k);
     const f = a.f != null ? a.f : (b.x !== a.x ? sg(b.x - a.x) : (i ? ks[i - 1].f || 1 : 1));
-    return { x: lerp(a.x, b.x, kk), y: lerp(a.y, b.y, kk) - (a.h ? 4 * a.h * k * (1 - k) : 0), state: a.s, facing: f, rot: lerp(a.rot || 0, b.rot || 0, kk), clip: a.clip != null ? a.clip : null, k };
+    return { x: lerp(a.x, b.x, kk), y: lerp(a.y, b.y, kk) - (a.h ? 4 * a.h * k * (1 - k) : 0), state: a.s, facing: f, rot: lerp(a.rot || 0, b.rot || 0, kk), clip: a.clip != null ? a.clip : null, k,
+      sc: lerp(a.sc == null ? 1 : a.sc, b.sc == null ? 1 : b.sc, kk), hue: ((lerp(a.hue || 0, b.hue || 0, kk) % 360) + 360) % 360, alpha: lerp(a.alpha == null ? 1 : a.alpha, b.alpha == null ? 1 : b.alpha, kk) };   // sc 0.3..1, hue deg, alpha 0..1 (defaults 1 / 0 / 1)
   }
   // a leap between two heights must not peak above the top of the display
   const hopH = (p, y0, y1, want) => { let h = want; for (let k = 0.02; k < 1; k += 0.02) { const d = 4 * k * (1 - k), room = y0 + (y1 - y0) * sm(k) - p.db.y0 - 2; h = Math.min(h, Math.max(0, room) / d); } return Math.max(0, h); };
@@ -650,5 +653,5 @@
     },
   };
 
-  return { G, Seq, track, spriteOf, WALK_PXS, FLOAT_PXS, WALK: WALK_PXS, FLOAT: FLOAT_PXS, helpers: { cl, lerp, sm, seg, spring, hash, ctr, sg } };
+  return { G, Seq, track, spriteOf, WALK_PXS, FLOAT_PXS, WALK: WALK_PXS, FLOAT: FLOAT_PXS, kit: { base, finish, approach, climbTo, clampX, hopH, walkS }, helpers: { cl, lerp, sm, seg, spring, hash, ctr, sg } };
 });

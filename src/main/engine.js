@@ -84,6 +84,7 @@ const Engine = {
   decide(){ const now=this._now, per=this.settings.personality, mis=this.settings.mischief/100;
     if(this.settings.stayPut){                       // "naughty corner": stay put, in-place animations only
       const w={idle:3.2,sit:2.2,sleep:1.0,bounce:1.3,jump:0.6,look:1.4,say:1.0};
+      if(this.settings.focus){ w.sleep=w.bounce=w.jump=w.say=0; }          // study focus: sit and idle quietly
       for(const k of this.recent) if(w[k]!=null) w[k]*=0.4;
       const ch=this._pick(w); this.recent.unshift(ch); this.recent=this.recent.slice(0,2); this.run(ch);
       this.nextDecision=now+rnd(1800,4200); return; }
@@ -94,7 +95,8 @@ const Engine = {
     if(per==='sleepy'){w.sleep+=2.5;w.sit+=2;w.walk-=1.2;}
     if(per==='naughty'){w.climb+=1.3;w.peek+=1;w.jump+=1;}
     if(per==='chill'){w.idle+=1;w.sit+=.6;}
-    if(this.gait==='step'){ w.climb=0; w.peek=0; w.toWindow=0; w.bounce=0; } else w.zoom=0;  // cats don't wall-climb or slime-bounce
+    if(this.gait==='step'){ w.climb=0; w.peek=0; w.toWindow=0; w.bounce=0; }
+    w.zoom=0;   // no random sprints: every buddy keeps a normal walking pace (user request, 0.9.0)  // cats don't wall-climb or slime-bounce
     for(const k of this.recent) if(w[k]!=null) w[k]*=0.35;
     const keys=Object.keys(w); let sum=keys.reduce((a,k)=>a+Math.max(0,w[k]),0), r=Math.random()*sum, ch='idle';
     for(const k of keys){ r-=Math.max(0,w[k]); if(r<=0){ch=k;break;} }
@@ -206,7 +208,7 @@ const Engine = {
   decideFloat(now){ const r=Math.random(), W0=this.world.x0,W1=this.world.x1,H0=this.world.y0,H1=this.world.y1;
     if(this.settings.stayPut){                       // hover in place, no roaming/wrap
       this._wrapping=false; this.target={x:this.pos.x+this.size/2, y:this.pos.y+this.size/2};
-      if(r<0.30) this.hooks.event&&this.hooks.event('phase'); else if(r<0.45) this.nap(); else if(r<0.6) this.hooks.event&&this.hooks.event('say',{kind:'idle'});
+      if(!this.settings.focus){ if(r<0.30) this.hooks.event&&this.hooks.event('phase'); else if(r<0.45) this.nap(); else if(r<0.6) this.hooks.event&&this.hooks.event('say',{kind:'idle'}); }
       this.setState('idle',0); this.nextDecision=now+rnd(2600,4800); return; }
     if(r<0.14) this.nap();
     else if(r<0.30){ this.hooks.event&&this.hooks.event('phase'); this.setState('idle',0); }      // phase out/in
@@ -269,3 +271,19 @@ const Engine = {
   hitTest(x,y,pad){ pad=(pad==null)?14:pad; return x>=this.pos.x-pad&&x<=this.pos.x+this.size+pad&&y>=this.pos.y-pad&&y<=this.pos.y+this.size+pad; },
 };
 module.exports = Engine;
+
+// An isolated engine for one extra buddy (multi-pet mode): same behaviour, its own state. The exported singleton above is unchanged.
+Engine.create = function create() {
+  const e = Object.create(Engine);
+  Object.assign(e, {
+    hooks: {}, size: 140, baseSpeed: 80, moveType: 'walk', gait: 'hop',
+    pos: { x: 300, y: 200 }, vel: { x: 0, y: 0 }, facing: 1,
+    state: 'idle', stateUntil: 0, nextDecision: 0, lastChange: 0, target: null,
+    onFloor: false, dragging: false, parachute: false, _chuteRolled: false, _wrapping: false, recent: [], cursor: { x: 0, y: 0 },
+    settings: { speed: 1, personality: 'chill', mischief: 25 },
+    speakingUntil: 0, _talkWalk: false,
+    world: { x0: 0, y0: 0, x1: 1280, y1: 720, floors: [] }, displays: [], screens: undefined, script: null, ledge: null, lastTick: 0, _wantClimb: false, _peeking: false, _climbStopY: null,
+    _now: 0, _nextHop: 0, _zoom: false, climbEdge: undefined, mischief: null,
+  });
+  return e;
+};

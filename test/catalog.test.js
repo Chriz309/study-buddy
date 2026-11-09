@@ -16,19 +16,27 @@ test('Captain Cram is a real tier-2 unique character priced above the rest', () 
   assert.ok(cat.RARITIES[h.rarity]);
 });
 
+test('Merlo is a legendary tier-3 walker in the gumball pool at legendary weight', () => {
+  const w = cat.characterById('wizard');
+  assert.ok(w && w.implemented && w.name === 'Merlo' && w.tier === 3 && w.rarity === 'legendary' && w.move === 'walk' && w.gait === 'step' && w.cost === 3000 && w.personality === 'wise');
+  assert.ok(/portal/i.test(w.blurb) && /potion/i.test(w.blurb) && /fireball/i.test(w.blurb) && !/[–—]/.test(w.blurb));
+  assert.ok(cat.rollPool(['blob']).some(c => c.id === 'wizard'));
+  assert.equal(cat.RARITIES.legendary.weight, Math.min(...Object.values(cat.RARITIES).map(r => r.weight)));
+});
+
 test('gumball: every unowned buddy is in the pool from the first crank, any tier', () => {
   const ids = (o) => cat.rollPool(o).map(c => c.id).sort();
-  assert.deepEqual(ids(['blob']), ['cat', 'ghost', 'hero']);
-  assert.deepEqual(ids(['blob', 'ghost']), ['cat', 'hero']);
-  assert.deepEqual(ids(['blob', 'cat', 'ghost', 'hero']), []);
+  assert.deepEqual(ids(['blob']), ['cat', 'ghost', 'hero', 'wizard']);
+  assert.deepEqual(ids(['blob', 'ghost']), ['cat', 'hero', 'wizard']);
+  assert.deepEqual(ids(['blob', 'cat', 'ghost', 'hero', 'wizard']), []);
   assert.deepEqual(cat.lockedIds(['blob']), []);
 });
 
 test('gumball: picks are rarity-weighted, the unique hero can come out of the first crank but less often', () => {
-  const pool = cat.rollPool(['blob']); const n = { ghost: 0, cat: 0, hero: 0 };
+  const pool = cat.rollPool(['blob']); const n = { ghost: 0, cat: 0, hero: 0, wizard: 0 };
   let seed = 7; const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   for (let i = 0; i < 20000; i++) n[cat.pickWeighted(pool, rand).id]++;
-  assert.ok(n.hero > 1000, 'hero shows up'); assert.ok(n.ghost > n.cat && n.cat > n.hero, JSON.stringify(n));
+  assert.ok(n.hero > 1000, 'hero shows up'); assert.ok(n.ghost > n.cat && n.cat > n.hero && n.hero > n.wizard && n.wizard > 100, JSON.stringify(n));
   assert.equal(cat.pickWeighted(pool, () => 0).id, pool[0].id); assert.equal(cat.pickWeighted(pool, () => 0.999999).id, pool[pool.length - 1].id);
 });
 
@@ -91,4 +99,10 @@ test('hero art: all frames the renderer asks for exist as 40x40 PNGs', () => {
 test('renderer wiring: every state the engine/scripts emit has a pose for both antic characters', () => {
   const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
   for (const st of ['run', 'pounce', 'happy', 'fly', 'dive', 'flex', 'land', 'crouch']) assert.ok(new RegExp("case '" + st + "'").test(app), 'poseFor handles ' + st);
+});
+
+test('sizeFor: Blob reads one size step smaller (its M is the old S), others unchanged', () => {
+  const { sizeFor } = require('../src/shared/catalog');
+  assert.ok(Math.abs(sizeFor('blob', 110) - 72) <= 2, String(sizeFor('blob', 110)));
+  assert.equal(sizeFor('cat', 110), 110); assert.equal(sizeFor('wizard', 72), 72); assert.equal(sizeFor('nope', 50), 50);
 });

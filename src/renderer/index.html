@@ -33,6 +33,13 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
 .pop { position: absolute; pointer-events: none; transform: translateX(-50%); white-space: nowrap; font-family: "Courier New", monospace; font-weight: 900; color: #ffe14d;
        text-shadow: -1px -1px 0 #7a1f00, 1px -1px 0 #7a1f00, -1px 1px 0 #7a1f00, 1px 1px 0 #7a1f00, 0 2px 0 #7a1f00; animation: pop 1.7s steps(14) forwards; }
 @keyframes pop { 0% { opacity: 0; margin-top: 0;} 12% { opacity: 1;} 80% { opacity: 1;} 100% { opacity: 0; margin-top: -34px;} }
+/* study timer: a tiny progress ring + mm:ss beside the head during a focus block (hidden otherwise) */
+#study { position: absolute; left: 0; top: 0; z-index: 14; display: none; pointer-events: none; align-items: center; gap: 3px; padding: 1px 5px 1px 2px; border-radius: 10px;
+         background: rgba(20,16,36,.55); color: #fff; font: 700 10px/1 "Segoe UI", system-ui, sans-serif; transform: translate(-50%,-100%); transition: opacity .3s; }
+#study svg { width: 14px; height: 14px; transform: rotate(-90deg); }
+#study circle { fill: none; stroke-width: 3; }
+#study .bg { stroke: rgba(255,255,255,.25); } #study .arc { stroke: #ffe14d; stroke-linecap: round; }
+#study.paused { opacity: .55; }
 #trail { position: absolute; left: 0; top: 0; z-index: 9; display: none; pointer-events: none; }
 #trail i { position: absolute; display: block; image-rendering: pixelated; animation: tflick .16s steps(2) infinite alternate; }
 @keyframes tflick { from { transform: scale(1); opacity: 1;} to { transform: scale(var(--ts,.7)); opacity: .75;} }
@@ -47,12 +54,16 @@ body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-user-select: none
   <div id="trail"></div>
   <div id="fx"></div>
   <div id="speech"></div>
+  <div id="study"><svg viewBox="0 0 20 20"><circle class="bg" cx="10" cy="10" r="8"/><circle class="arc" cx="10" cy="10" r="8" stroke-dasharray="50.27" stroke-dashoffset="0"/></svg><span></span></div>
   <script src="../shared/backoff.js"></script>
   <script src="art.js"></script>
   <script src="art-ghost.js"></script>
   <script src="art-cat.js"></script>
   <script src="art-cat-mischief.js"></script>
   <script src="art-hero.js"></script>
+  <script src="art-wizard.js"></script>
+  <script src="art-cosmetics.js"></script>
+  <script src="cosmetics.js"></script>
   <script src="parachute.js"></script>
   <script src="food.js"></script>
   <script src="jelly.js"></script>

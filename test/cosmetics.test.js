@@ -181,6 +181,6 @@ test('wiring: main exposes buy/equip over IPC, preload bridges them, the rendere
   assert.ok(/buyCosmetic:.*cosmetic:buy/.test(pre) && /equipCosmetic:.*cosmetic:equip/.test(pre));
   assert.ok(/cosmeticCatalog: COSMETICS/.test(main));
   const idx = read('src/renderer/index.html'); assert.ok(idx.indexOf('art-cosmetics.js') > 0 && idx.indexOf('cosmetics.js') > 0 && idx.indexOf('cosmetics.js') < idx.indexOf('app.js'));
-  const set = read('src/settings/settings.html'); assert.ok(/data-tab="wardrobe"/.test(set) && /id="wardrobeRoot"/.test(set) && /wardrobe\.js/.test(set));
+  const set = read('src/settings/settings.html'); assert.ok(/data-tab="customise"/.test(set) && /id="customise"/.test(set) && /id="wardrobeRoot"/.test(set) && /wardrobe\.js/.test(set));
   assert.ok(!/[–—]/.test(read('src/settings/wardrobe.js')), 'no em or en dashes in user-facing text');
 });

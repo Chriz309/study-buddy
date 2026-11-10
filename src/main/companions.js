@@ -358,8 +358,17 @@ function createCompanions(d) {
   function onDisplaysChanged() {
     for (const s of sats.values()) { try { s.engine.setWorld(d.worldDisplays()); s.shown = null; s.interactive = null; s.topAt = 0; } catch (err) { logError('companion displays', err); } }
   }
+  // after a wake from sleep: a fresh window for every satellite (same reason as the lead, see main.js onWake)
+  function rebuildWindows() {
+    for (const s of sats.values()) {
+      if (s.dead) continue;
+      try { const w = s.win; s.win = null; if (w && !w.isDestroyed()) w.destroy(); } catch {}
+      s.grabOff = null; s.dragPingAt = 0; s.reviveAt = 0; try { s.engine.forceRelease(); } catch {}
+      try { makeWindow(s); } catch (err) { logError('companion rebuild ' + s.id, err); }
+    }
+  }
   return {
-    sync, frame, destroyAll, onDisplaysChanged, force,
+    sync, frame, destroyAll, onDisplaysChanged, force, rebuildWindows,
     get: (id) => sats.get(id) || null,
     anyBusy: () => !!slot || !!pair || [...sats.values()].some(s => !!s.engine.script),
     forEach: (fn) => { for (const s of [...sats.values()]) fn(s); },

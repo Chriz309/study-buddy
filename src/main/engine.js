@@ -6,6 +6,9 @@ const rnd=(a,b)=>a+Math.random()*(b-a);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const sign=(v)=>v<0?-1:1;
 const geo=require('../shared/geometry');
+// "nothing changed for this long" = stuck, pick something new. A walk across a wide desktop or a parachute drop legitimately takes longer than
+// a rest, so moving states get more time (7 s used to cut every walk over ~900 px short and re-decide in the middle of a long fall).
+const STUCK_MS=7000, STUCK_MOVING_MS=30000;
 
 const Engine = {
   hooks:{}, size:140, baseSpeed:80, moveType:'walk', gait:'hop',
@@ -131,7 +134,7 @@ const Engine = {
 
   tick(now){ const dt=Math.min(0.05,(now-this.lastTick)/1000); this.lastTick=now; this._now=now;
     if(!this.dragging){ if(this.script) this._runScript(dt,now); else this.step(dt,now); }
-    if(!this.dragging&&!this.script&&this.state!=='sleep'&&this.state!=='drag'&&this.state!=='climb'&&now-this.lastChange>7000&&!this.isSpeaking(now)){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
+    if(!this.dragging&&!this.script&&this.state!=='sleep'&&this.state!=='drag'&&this.state!=='climb'&&now-this.lastChange>((this.state==='walk'||this.state==='fall')?STUCK_MOVING_MS:STUCK_MS)&&!this.isSpeaking(now)){ this._wantClimb=this._peeking=false; this.target=null; this.decide(); }
     if(!this.dragging&&!this.script&&this.moveType!=='float'&&!this._wrapping) this._pullOntoScreens();
     // never let a non-finite position escape the tick (belt-and-braces; e.g. a
     // stray NaN from the floating/cursor-avoid math would crash the window move)

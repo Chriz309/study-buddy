@@ -19,11 +19,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'   # 22: `node --test` expands the test/*.test.js pattern itself (the Windows shell does not)
           cache: 'npm'
 
       # package-lock.json pins every library version, so builds are reproducible
       - run: npm ci --no-audit --no-fund
+
+      # Never build or publish a release whose tests fail (a push to main reaches every installed app).
+      - name: Run tests
+        run: npm test
 
       # electron-builder uploads files in parallel and each upload tries to create the Release, so
       # they race (422 already_exists). Create it first; the uploads then attach to it.
@@ -71,7 +75,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'   # 22: `node --test` expands the test/*.test.js pattern itself (the Windows shell does not)
           cache: 'npm'
 
       - run: npm ci --no-audit --no-fund

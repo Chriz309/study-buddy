@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Tray, Menu, screen, ipcMain, nativeImage, shell, dialog, powerMonitor, desktopCapturer } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, screen, ipcMain, nativeImage, shell, dialog, powerMonitor, desktopCapturer } = require('electron');
 const path = require('path');
 const fgProbe = require('./fgprobe');   // Windows foreground-window + fullscreen probe (one long-lived PowerShell)
 const fsdetect = require('./fullscreen');   // pure: which displays are covered by a fullscreen app
@@ -10,7 +10,9 @@ const wardrobe = require('../shared/wardrobe');
 const fs = require('fs');
 const geo = require('../shared/geometry');
 const watchdog = require('./watchdog');
+const wake = require('./wake');                   // pure: when a wake signal should rebuild the windows
 const pacing = require('./pacing');
+const economy_ = require('./economy');           // idle-points maths (pure): rate, clock-safe tick, wake detection
 const inputHealth = require('./inputhealth').createInputHealth();   // notices a pet that should take the mouse but does not
 const scripts = require('./scripts');
 const toy = require('./toy');
@@ -442,7 +444,7 @@ function moveOffFullscreen() {
 function openSettings() {
   if (settingsWin) { settingsWin.show(); settingsWin.focus(); return; }
   settingsWin = new BrowserWindow({
-    width: 760, height: 620, minWidth: 560, minHeight: 480, title: 'Study Buddy',
+    width: 940, height: 680, minWidth: 760, minHeight: 540, title: 'Study Buddy',
     backgroundColor: '#13131a', show: false,
     icon: path.join(ASSETS, process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
@@ -468,10 +470,13 @@ function pushState() {
 }
 
 // --- economy -------------------------------------------------------------
-function sparkRate() { const s = store.get(); const lvl = (s.levels && s.levels[s.active]) || 0; return +(1 + 0.4 * (s.owned.length - 1) + 0.1 * lvl).toFixed(2); }
+// every owned buddy's feed level counts (the Care text always said "your whole collection earns faster"; only the active one used to)
+function sparkRate() { const s = store.get(); return economy_.sparkRate(s.owned, s.levels); }
 let lastTick = Date.now();
-setInterval(() => { const now = Date.now(); const dt = (now - lastTick) / 1000; lastTick = now;
-  const s = store.get(); if (!s.settings.paused) store.set({ sparks: +(s.sparks + sparkRate() * dt).toFixed(3) }); }, 1000);
+// The tick pays for at most a few seconds: a sleeping PC (timers frozen for hours) or a clock change used to pay, or take away, the whole gap.
+setInterval(() => { const now = Date.now(); const gap = now - lastTick; lastTick = now;
+  if (economy_.looksLikeWake(gap)) onWake('timer-gap');   // also catches sleeps that never raise a powerMonitor event (Modern Standby)
+  const s = store.get(); if (!s.settings.paused) store.set({ sparks: economy_.earn(s.sparks, sparkRate(), gap) }); }, 1000);
 setInterval(() => { const s = store.get(); for (const w of [petWin, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send('sparks', s.sparks); }, 1000);
 
 // --- tray ----------------------------------------------------------------
@@ -537,6 +542,7 @@ function applyLoginItem(enabled) {
 }
 
 // --- auto update ---------------------------------------------------------
+const UPDATE_RECHECK_MS = 4 * 3600 * 1000, UPDATE_RETRY_MS = 15 * 60 * 1000;
 let _updater = null;          // the electron-updater instance (once initialised)
 let _installing = false;      // guard so we only trigger the install once
 let _promptOpen = false;      // guard so we only show the restart dialog once
@@ -581,10 +587,15 @@ function showUpdatePopup(version) {
   updatePopupWin.setAlwaysOnTop(true, 'screen-saver');
   updatePopupWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
   updatePopupWin.loadFile(path.join(__dirname, '..', 'settings', 'update-popup.html'), { search: 'v=' + encodeURIComponent(version || '') + (IS_MAC ? '&mac=1' : '') });
-  updatePopupWin.once('ready-to-show', () => { updatePopupWin.show(); });
-  updatePopupWin.on('closed', () => { updatePopupWin = null; });
+  const uw = updatePopupWin;
+  uw.once('ready-to-show', () => { if (!uw.isDestroyed()) uw.show(); });
+  uw.on('closed', () => { if (updatePopupWin === uw) updatePopupWin = null; });
 }
 
+// registered in every build (an unpackaged or dev build has no updater: the button then simply reports 'up to date')
+ipcMain.handle('update:check', () => { try { if (_updater) _updater.checkForUpdates().catch(() => {}); else { update = { status: 'current', info: null }; pushState(); } } catch {} return true; });
+ipcMain.handle('update:install', () => { installUpdateNow(); return true; });
+ipcMain.on('update:later', () => { closeUpdatePopup(); });
 function initUpdates() {
   if (isDev || DEV_BUILD) return; let autoUpdater;   // the dev build never checks for updates
   try { autoUpdater = require('electron-updater').autoUpdater; } catch { return; }
@@ -603,10 +614,11 @@ function initUpdates() {
     if (tray && tray.displayBalloon) tray.displayBalloon({ title: 'Study Buddy', content: `Update ${i && i.version || ''} downloaded, ready to install.` });
     showUpdatePopup(i && i.version);          // on-screen toast, no need to open settings
   });
-  ipcMain.handle('update:check', () => { try { autoUpdater.checkForUpdates(); } catch {} return true; });
-  ipcMain.handle('update:install', () => { installUpdateNow(); return true; });
-  ipcMain.on('update:later', () => { closeUpdatePopup(); });
   setTimeout(() => { try { autoUpdater.checkForUpdatesAndNotify(); } catch {} }, 4000);
+  // The app lives in the tray for weeks (start on login, laptops sleep instead of rebooting): look again every few hours, and soon after a failed check.
+  const recheck = () => { if (_installing || update.status === 'downloaded' || update.status === 'manual') return; try { autoUpdater.checkForUpdates().catch(() => {}); } catch {} };
+  const again = () => { recheck(); setTimeout(again, UPDATE_RECHECK_MS).unref(); }; setTimeout(again, UPDATE_RECHECK_MS).unref();   // a re-armed timeout, not another interval
+  autoUpdater.on('error', () => { setTimeout(recheck, UPDATE_RETRY_MS).unref(); });
 }
 
 // --- IPC -----------------------------------------------------------------
@@ -618,14 +630,7 @@ function applySettingsPatch(patch) {
   if ('showAll' in patch || 'hideBuddies' in patch) companions.sync();
   syncEngineSettings(); pushState(); refreshTrayMenu(); scheduleAntic(); if (mischief) { if (!mischiefEnabled()) mischief.stop('stopped'); mischief.refresh(); } return fullState();
 }
-ipcMain.handle('buddy:unlock', (_e, id) => {
-  const s = store.get(); const c = characterById(id);
-  if (!c || !c.implemented) return { ok: false, reason: 'unavailable' };
-  if (s.owned.includes(id)) return { ok: true };
-  if (!tierUnlocked(c.tier || 1, s.owned)) return { ok: false, reason: 'locked' };
-  if (!economy.canAfford(s.sparks, c.cost)) return { ok: false, reason: 'poor' };
-  store.set({ sparks: economy.after(s.sparks, c.cost), owned: [...s.owned, id], active: id }); companions.sync(); pushState(); return { ok: true };
-});
+// (the old direct 'buddy:unlock' purchase is gone: buddies only come out of the gumball machine)
 // Each buddy you already own makes the next crank 1.6x pricier (rounded to 1k).
 function gumballCost() {
   const s = store.get();
@@ -662,9 +667,10 @@ function showHatch(id, name, rarity) {
   hatchWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
   hatchWin.loadFile(path.join(__dirname, '..', 'settings', 'reveal.html'),
     { search: `id=${encodeURIComponent(id)}&name=${encodeURIComponent(name || '')}&rarity=${encodeURIComponent(rarity || '')}` });
-  hatchWin.once('ready-to-show', () => hatchWin.show());
-  hatchWin.on('closed', () => { hatchWin = null; });
-  setTimeout(() => { try { if (hatchWin && !hatchWin.isDestroyed()) hatchWin.destroy(); } catch {} }, 9000);  // safety
+  const hw = hatchWin;   // every callback below is tied to THIS window: a second crank within 9 s used to lose its reveal to the first one's timer
+  hw.once('ready-to-show', () => { if (!hw.isDestroyed()) hw.show(); });
+  hw.on('closed', () => { if (hatchWin === hw) hatchWin = null; });
+  setTimeout(() => { try { if (!hw.isDestroyed()) hw.destroy(); } catch {} }, 9000);  // safety
 }
 ipcMain.on('hatch:done', () => { try { if (hatchWin && !hatchWin.isDestroyed()) hatchWin.destroy(); } catch {} });
 
@@ -703,7 +709,6 @@ ipcMain.handle('buddy:setColor', (_e, id, val) => {
   if (typeof val === 'number' || (typeof val === 'string' && /^\d+$/.test(val))) v = Math.max(0, Math.min(360, Math.round(Number(val))));
   store.set({ colors: { ...s.colors, [id]: v } }); pushState(); return fullState();
 });
-ipcMain.handle('buddy:earn', (_e, n) => { const s = store.get(); store.set({ sparks: +(s.sparks + Math.max(0, n || 0)).toFixed(3) }); return store.get().sparks; });
 function feedCost(level) { return 50 * (level + 1); }
 ipcMain.handle('buddy:feed', (_e, id) => {
   const s = store.get(); if (!s.owned.includes(id)) return { ok: false, reason: 'unowned' };
@@ -772,6 +777,29 @@ function runWatchdog() {
 function refreshAfterWake() {
   try { syncWorld(); reassertWindowStyles(); runWatchdog(); } catch (e) { logError('wake', e); }
 }
+// Back from sleep / lock / a frozen process. Users reported a buddy that is visible but cannot be clicked or dragged after the PC slept, and it
+// cannot be reproduced on demand: Windows can drop the window's mouse style, its GPU surface or its place in the z-order while asleep, and the
+// in-place re-asserts above do not always bring them back. So the windows are REBUILT once per wake (fresh window, fresh renderer, fresh styles),
+// the foreground probe is restarted (its pipe can be stale) and the interaction state starts clean. Several wake signals arrive together
+// (resume, unlock-screen, the timer gap): one rebuild serves them all (wake.js).
+let _wakeT = null, _wakeAt = 0;
+function onWake(why) {
+  if (_wakeT || app.isQuiting) return;
+  const t0 = Date.now(); if (wake.tooSoon(t0, _wakeAt)) { setTimeout(refreshAfterWake, 800); return; }
+  _wakeAt = t0; devLog('wake', why);
+  _wakeT = setTimeout(() => {
+    _wakeT = null;
+    try {
+      lastTick = Date.now();
+      try { fgProbe.restart(); } catch {} fgBusy = false;
+      syncWorld();
+      if (petWin && !petWin.isDestroyed() && !petGaveUp) rebuildPetWindow();
+      try { companions.rebuildWindows(); } catch (e) { logError('wake companions', e); }
+      inputHealth.seen();
+      runWatchdog();
+    } catch (e) { logError('wake', e); }
+  }, wake.SETTLE_MS);
+}
 // Tray item: recentre the sprite on the screen the mouse is on and reset all interaction state.
 function bringBuddyBack() {
   try {
@@ -835,6 +863,11 @@ const studyFocusing = () => study.isFocusing(studyStatus());
 const studyView = () => ({ ...studyStatus(), stats: { ...study.viewStats(store.get().study, study.dayKey(Date.now())), sparks: Math.floor(Number((store.get().study || {}).sparks) || 0) } });
 const STUDY_CELEBRATE = { wizard: 'starshow', hero: 'powerup', cat: 'chase' };   // each character's best antic; others get sparkles + a happy squish
 function studySay(kind) { petEventOut('say', { kind, force: true }); }
+// The buddy is hidden behind fullscreen apps (lecture videos, PDFs) and can be hidden by hand: the end of a block must still reach the user.
+// A normal system notification (Windows itself holds it back during presentations / Do Not Disturb). Off with settings.studyNotify = false.
+function studyNotify(title, body) {
+  try { if (store.get().settings.studyNotify === false || !Notification.isSupported()) return; new Notification({ title, body, icon: path.join(ASSETS, 'icon.png') }).show(); } catch (e) { logError('notify', e); }
+}
 function sendStudy() { const st = studyStatus(); for (const w of [petWin, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send('study', st); }
 function studyCelebrate(bonus) {
   petEventOut('popup', { text: '+' + bonus + ' ⚡' }); studySay('studyDone');
@@ -847,9 +880,11 @@ function onStudyEvent(e) {
     const s = store.get();
     store.set({ sparks: +(s.sparks + e.bonus).toFixed(3), study: study.recordSession(s.study, study.dayKey(Date.now()), e.bonus) });
     setImmediate(() => { try { studyCelebrate(e.bonus); } catch (err) { logError('study celebrate', err); } });   // after the break has begun, so the buddy is free to play
+    studyNotify('Focus block done', '+' + e.bonus + ' Sparks. Time for a break.');
     return;
   }
-  if (e.type === 'breakComplete') { studySay('studyBreak'); return; }
+  if (e.type === 'breakComplete') { studySay('studyBreak'); studyNotify('Break is over', 'Ready for the next focus block?'); return; }
+  if (e.type === 'slept') { devLog('study: timer held for ' + Math.round(e.ms / 1000) + ' s of sleep'); return; }
   if (e.type === 'stopped') { studySay('studyStop'); return; }
   syncEngineSettings();   // phase / pause / resume: re-evaluate calm mode
   if (studyFocusing() && engine.state === 'sleep') engine.setState('idle', 300);   // a nap that spans the start of focus ends now
@@ -1044,7 +1079,15 @@ function relayout() {
   }, 300);
 }
 
+// Electron's default menu gives every window DevTools (Ctrl+Shift+I), reload and zoom shortcuts, which also let anyone edit their Sparks.
+// Windows / Linux: no menu at all (copy / paste in text fields still work). macOS needs an app + edit menu for Cmd+Q and Cmd+C/V.
+function setAppMenu() {
+  if (DEV) return;   // dev runs keep the default menu (DevTools)
+  try { Menu.setApplicationMenu(IS_MAC ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }]) : null); } catch (e) { logError('menu', e); }
+}
 app.on('ready', () => {
+  setAppMenu();
+  try { if (process.platform === 'win32' && app.isPackaged) app.setAppUserModelId('com.chrishook.studybuddy'); } catch {}   // notifications show under the app's own name
   store.load();
   applyLoginItem(store.get().settings.startOnBoot);
   startEngine();
@@ -1054,7 +1097,7 @@ app.on('ready', () => {
   // save immediately when the PC sleeps or shuts down (laptops often die asleep)
   try { for (const ev of ['suspend', 'shutdown', 'lock-screen']) powerMonitor.on(ev, () => { try { store.saveNow(); } catch {} }); } catch {}
   // after sleep / unlock / RDP the OS can drop topmost + the click-through style and reshuffle displays
-  try { for (const ev of ['resume', 'unlock-screen']) powerMonitor.on(ev, () => setTimeout(refreshAfterWake, 800)); } catch {}
+  try { for (const ev of ['resume', 'unlock-screen']) powerMonitor.on(ev, () => onWake(ev)); } catch {}
   screen.on('display-added', relayout);
   screen.on('display-removed', relayout);
   screen.on('display-metrics-changed', relayout);

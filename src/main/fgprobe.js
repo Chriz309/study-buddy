@@ -10,6 +10,9 @@
 // If the long-lived process can't be used, we fall back to the original
 // one-shot method, so window-awareness keeps working either way.
 const { spawn, execFile } = require('child_process');
+const path = require('path');
+// absolute path: never a PATH lookup (same rule as mischief/probe.js)
+const POWERSHELL = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 
 // The C# helper (compiled once by Add-Type). Snap() is per-monitor DPI aware (SetThreadDpiAwarenessContext(-4)), so every rectangle it
 // reports is in PHYSICAL pixels, whatever monitor the window is on (a DPI-unaware GetWindowRect returned scaled-down values for windows on a
@@ -77,7 +80,7 @@ function failAll() { for (const id of [...pending.keys()]) settle(id, null); }
 
 function start(cmd) {
   try {
-    proc = spawn(cmd || 'powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', LOOP],
+    proc = spawn(cmd || POWERSHELL, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', LOOP],
       { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
   } catch { proc = null; fails++; return false; }
   buf = ''; answered = 0;
@@ -87,8 +90,12 @@ function start(cmd) {
     while ((i = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, i).replace(/\r$/, ''); buf = buf.slice(i + 1);
       const k = line.indexOf('#'); if (k < 0) continue;
-      answered++; fails = 0;
-      settle(Number(line.slice(0, k)), line.slice(k + 1));
+      // An EMPTY answer means the helper did not compile or threw (Add-Type is blocked on locked-down PCs): that is a failure, not a
+      // healthy probe. It used to count as healthy, so fullscreen detection stayed silently off for the whole session.
+      const body = line.slice(k + 1);
+      answered++; if (body) fails = 0; else fails++;
+      settle(Number(line.slice(0, k)), body || null);
+      if (!body && fails >= MAX_FAILS) stop(true);
     }
   });
   const dead = () => { if (proc) { proc = null; if (!stopped) fails++; failAll(); } };
@@ -97,9 +104,19 @@ function start(cmd) {
   return true;
 }
 
-function oneShot(cb) {
-  execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', ONE_SHOT], { timeout: 2500, windowsHide: true },
-    (err, stdout) => cb(err || !stdout ? null : String(stdout).trim()));
+// The fallback starts a whole PowerShell and compiles the helper each time, so it must not run on every poll: after a failure it waits,
+// doubling up to ONE_SHOT_MAX_WAIT (a PC where PowerShell is blocked then costs one short-lived process every few minutes, not one every 1.5 s).
+const ONE_SHOT_MIN_WAIT = 5000, ONE_SHOT_MAX_WAIT = 5 * 60 * 1000;
+let oneShotWait = 0, oneShotNextAt = 0;
+const nextWait = (w) => Math.min(ONE_SHOT_MAX_WAIT, w ? w * 2 : ONE_SHOT_MIN_WAIT);
+function oneShot(cb, now = Date.now(), run = execFile) {
+  if (now < oneShotNextAt) return cb(null);
+  oneShotNextAt = now + (oneShotWait || ONE_SHOT_MIN_WAIT);   // never two at once, and never more often than the minimum wait
+  run(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command', ONE_SHOT], { timeout: 6000, windowsHide: true }, (err, stdout) => {
+    const out = err || !stdout ? null : String(stdout).trim() || null;
+    oneShotWait = out ? 0 : nextWait(oneShotWait); oneShotNextAt = now + (oneShotWait || ONE_SHOT_MIN_WAIT);
+    cb(out);
+  });
 }
 
 // cb(resultString | null)
@@ -125,4 +142,11 @@ function stop(keepFallback) {
   setTimeout(() => { try { p.kill(); } catch {} }, 1500).unref();
 }
 
-module.exports = { query, stop, _test: { start, LOOP, ONE_SHOT, CS, state: () => ({ fails, answered, alive: !!proc }) } };
+// after a sleep the helper's pipes can be stale: drop it and start clean on the next query (the fallback back-off starts over too)
+function restart() {
+  if (stopped) return;
+  stop(true); fails = 0; oneShotWait = 0; oneShotNextAt = 0;
+}
+
+module.exports = { query, stop, restart, _test: { start, oneShot, nextWait, LOOP, ONE_SHOT, CS, POWERSHELL, ONE_SHOT_MIN_WAIT, ONE_SHOT_MAX_WAIT,
+  reset: () => { oneShotWait = 0; oneShotNextAt = 0; fails = 0; }, state: () => ({ fails, answered, alive: !!proc, oneShotWait, oneShotNextAt }) } };

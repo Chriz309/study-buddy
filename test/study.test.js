@@ -7,7 +7,9 @@ const MIN = 60000;
 function rig() {
   let t = new Date(2026, 5, 10, 9, 0, 0).getTime(); const ev = [];
   const st = S.createStudy({ now: () => t, emit: (e) => ev.push(e) });
-  return { st, ev, adv: (ms) => { t += ms; return st.tick(); }, types: (ty) => ev.filter(e => e.type === ty) };
+  // adv = awake time: the clock moves in steps of at most 10 s with a tick each (main.js ticks every second). jump = the PC slept: one big gap, then a tick.
+  const adv = (ms) => { let hit = false; do { const d = Math.min(ms, 10000); t += d; ms -= d; if (st.tick()) hit = true; } while (ms > 0); return hit; };
+  return { st, ev, adv, jump: (ms) => { t += ms; return st.tick(); }, types: (ty) => ev.filter(e => e.type === ty) };
 }
 
 test('25/5 cycles focus -> break -> focus and pays 60 sparks per minute', () => {
@@ -38,11 +40,20 @@ test('pause and resume keep the remaining time; paused time does not count', () 
   assert.ok(r.st.resume()); r.adv(14 * MIN); assert.equal(r.st.status().phase, 'focus'); r.adv(MIN); assert.equal(r.st.status().phase, 'break');
 });
 
-test('sleeping past the end completes the block exactly once', () => {
-  const r = rig(); r.st.start('25/5');
-  r.adv(5 * 60 * MIN);   // laptop slept five hours
-  assert.equal(r.types('focusComplete').length, 1); assert.equal(r.st.status().phase, 'break'); assert.equal(r.st.status().remainingMs, 5 * MIN);
-  r.adv(0); r.st.tick(); assert.equal(r.types('focusComplete').length, 1);
+test('time asleep does not count: no bonus for a slept-through block, the countdown carries on after the wake', () => {
+  const r = rig(); r.st.start('25/5'); r.adv(10 * MIN);
+  assert.equal(r.jump(5 * 60 * MIN), false);   // laptop slept five hours
+  assert.equal(r.types('focusComplete').length, 0); assert.equal(r.types('slept').length, 1);
+  assert.equal(r.st.status().phase, 'focus'); assert.equal(r.st.status().remainingMs, 15 * MIN);
+  r.adv(15 * MIN - 1000); assert.equal(r.st.status().phase, 'focus');
+  r.adv(1000); assert.equal(r.types('focusComplete').length, 1); assert.equal(r.st.status().phase, 'break');
+  r.jump(60 * MIN); assert.equal(r.st.status().phase, 'break'); assert.equal(r.st.status().remainingMs, 5 * MIN);   // a break freezes the same way
+});
+
+test('a clock set backwards never lengthens a block or pays early; a short hiccup is not a sleep', () => {
+  const r = rig(); r.st.start('25/5'); r.adv(5 * MIN);
+  r.jump(-2 * 60 * MIN); assert.equal(r.st.status().remainingMs, 25 * MIN); assert.equal(r.types('focusComplete').length, 0);
+  const q = rig(); q.st.start('25/5'); q.jump(S.SLEEP_GAP_MS); assert.equal(q.types('slept').length, 0); assert.equal(q.st.status().remainingMs, 25 * MIN - S.SLEEP_GAP_MS);
 });
 
 test('stop gives nothing; skipping a focus gives nothing; skipping a break starts focus', () => {

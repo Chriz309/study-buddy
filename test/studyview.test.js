@@ -33,6 +33,7 @@ test('explainer copy has no em or en dashes and mentions the key facts', () => {
 test('study tab is wired: nav button, section, scripts, preload and main handler', () => {
   const html = fs.readFileSync('src/settings/settings.html', 'utf8');
   assert.ok(html.includes('data-tab="study"') && html.includes('id="study"') && html.includes('study.js') && html.includes('studyview.js'));
-  assert.ok(html.indexOf('data-tab="care"') < html.indexOf('data-tab="study"') && !html.includes('id="studyStats"'));
+  const tabOrder = ['buddies', 'customise', 'study', 'settings', 'about'].map(t => html.indexOf('data-tab="' + t + '"'));
+  assert.ok(tabOrder.every((x, i) => x > 0 && (i === 0 || x > tabOrder[i - 1])) && !html.includes('id="studyStats"'), 'five sections in order');
   assert.ok(fs.readFileSync('src/main/preload.js', 'utf8').includes("'study:cmd'") && fs.readFileSync('src/main/main.js', 'utf8').includes("ipcMain.handle('study:cmd'"));
 });

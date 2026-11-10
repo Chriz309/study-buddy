@@ -25,7 +25,6 @@ contextBridge.exposeInMainWorld('buddy', {
 
   // mutations (settings window)
   patchSettings: (patch) => ipcRenderer.invoke('settings:patch', patch),
-  unlock:        (id) => ipcRenderer.invoke('buddy:unlock', id),
   roll:          () => ipcRenderer.invoke('buddy:roll'),
   setActive:     (id) => ipcRenderer.invoke('buddy:setActive', id),
   rename:        (id, name) => ipcRenderer.invoke('buddy:rename', id, name),
@@ -33,7 +32,6 @@ contextBridge.exposeInMainWorld('buddy', {
   devAddSparks:  () => ipcRenderer.invoke('dev:addSparks'),
   devSell:       (id) => ipcRenderer.invoke('dev:sell', id),
   hatchDone:     () => ipcRenderer.send('hatch:done'),
-  earn:          (n) => ipcRenderer.invoke('buddy:earn', n),
   feed:          (id) => ipcRenderer.invoke('buddy:feed', id),
   buyCosmetic:   (id) => ipcRenderer.invoke('cosmetic:buy', id),
   equipCosmetic: (charId, slot, id) => ipcRenderer.invoke('cosmetic:equip', charId, slot, id),

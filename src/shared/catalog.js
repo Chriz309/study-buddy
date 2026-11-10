@@ -62,7 +62,7 @@ const IMPLEMENTED_IDS = CHARACTERS.filter(c => c.implemented).map(c => c.id);
 
 const DEFAULTS = {
   version: 6,
-  sparks: 800,                 // a little to play with, enough for a first gumball crank
+  sparks: 800,                 // a little to play with (feeding, a first look at the Wardrobe prices); the gumball machine costs far more
   active: 'blob',
   owned: ['blob'],             // start with just Blob; everyone else lives in the gumball machine
   levels: {},
@@ -83,10 +83,10 @@ const DEFAULTS = {
     paused: false,
     stayPut: false,            // "naughty corner": stay in place, idle animations only
     reduceMotion: false,
-    roamMonitors: true,        // cross to other monitors
     windowAware: true,         // perch on the active window's top edge (Windows)
     showAll: false,
     hideBuddies: [],           // multi-pet: owned buddies the user chose NOT to show (ids)            // show every owned pet at once (future multi-pet)
+    studyNotify: true,         // system notification when a focus block or a break ends (the buddy may be hidden behind a fullscreen app)
     antics: true,              // now-and-then special antics (cat butterfly chase, Captain Cram's stunts)
     deskMischief: true,        // desktop mischief (overlay illusions, Windows): ON by default since 0.7.1. An explicit false (turned off, or tray "Stop mischief") stays off
     deskMischiefFreq: 'normal',// rare | normal | chaos
